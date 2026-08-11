@@ -1,0 +1,219 @@
+{
+  "app_name": "Gobigred",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "Trustworthy, structured, and clear; an iOS-native facility management tool that feels snappy, highly readable, and perfectly balanced for on-the-go school staff.",
+  "color": {
+    "light": {
+      "surface": "#FFFFFF",
+      "onSurface": "#111827",
+      "surfaceSecondary": "#F2F2F7",
+      "onSurfaceSecondary": "#374151",
+      "surfaceTertiary": "#E5E5EA",
+      "onSurfaceTertiary": "#4B5563",
+      "surfaceInverse": "#1C1C1E",
+      "onSurfaceInverse": "#FFFFFF",
+      "brand": "#E41C38",
+      "brandPrimary": "#E41C38",
+      "onBrandPrimary": "#FFFFFF",
+      "brandSecondary": "#FDE8EA",
+      "onBrandSecondary": "#9B1326",
+      "brandTertiary": "#F9D2D7",
+      "onBrandTertiary": "#E41C38",
+      "success": "#34C759",
+      "onSuccess": "#FFFFFF",
+      "warning": "#FFCC00",
+      "onWarning": "#111827",
+      "error": "#FF3B30",
+      "onError": "#FFFFFF",
+      "info": "#8E8E93",
+      "onInfo": "#FFFFFF",
+      "border": "#E5E5EA",
+      "borderStrong": "#C7C7CC",
+      "divider": "#E5E5EA",
+      "status_untouched": "#8E8E93",
+      "status_teacher_in": "#FF3B30",
+      "status_in_progress": "#FFCC00",
+      "status_completed": "#34C759"
+    },
+    "dark": {
+      "surface": "#000000",
+      "onSurface": "#F9FAFB",
+      "surfaceSecondary": "#1C1C1E",
+      "onSurfaceSecondary": "#D1D5DB",
+      "surfaceTertiary": "#2C2C2E",
+      "onSurfaceTertiary": "#9CA3AF",
+      "surfaceInverse": "#FFFFFF",
+      "onSurfaceInverse": "#000000",
+      "brand": "#E41C38",
+      "brandPrimary": "#FF3B50",
+      "onBrandPrimary": "#FFFFFF",
+      "brandSecondary": "#3A070E",
+      "onBrandSecondary": "#FDE8EA",
+      "brandTertiary": "#5D0B16",
+      "onBrandTertiary": "#FF3B50",
+      "success": "#30D158",
+      "onSuccess": "#000000",
+      "warning": "#FFD60A",
+      "onWarning": "#000000",
+      "error": "#FF453A",
+      "onError": "#000000",
+      "info": "#98989D",
+      "onInfo": "#000000",
+      "border": "#38383A",
+      "borderStrong": "#545456",
+      "divider": "#38383A",
+      "status_untouched": "#98989D",
+      "status_teacher_in": "#FF453A",
+      "status_in_progress": "#FFD60A",
+      "status_completed": "#30D158"
+    }
+  },
+  "typography": {
+    "displayFontFamily": "Geist-Medium",
+    "textFontFamily": "Geist-Regular",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical padding, use safe area context at screen roots. Cards and buttons should have minimum 44pt touch targets.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": "true",
+    "do's": [
+      "Use glassmorphism (expo-blur) on the bottom tab bar and sticky headers above scrollable content.",
+      "Use glass on Bottom Sheet headers/handles."
+    ],
+    "dont's": [
+      "Never apply glass to the interactive floor plan room pins or task cards.",
+      "Never blur body text regions or chat bubbles."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-blur",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Auth / Role Picker",
+      "purpose": "Select user role (Cleaner, Teacher, Boss, Admin) and authenticate.",
+      "states": {
+        "loading": "Spinner over disabled role buttons.",
+        "empty": "N/A",
+        "error": "Standard iOS style alert for invalid credentials."
+      },
+      "layout": "Vertical stack. Top 1/3: Gobigred branding (Husker red logo or text). Middle: 4 large, full-width `surfaceSecondary` cards acting as role buttons. Clicking a role opens an `@gorhom/bottom-sheet` for entry: Cleaner/Teacher (Text input for Name), Boss (Name + Password), Admin (Password 'Gobigred' only)."
+    },
+    {
+      "name": "Floor Plan (Main Dashboard)",
+      "purpose": "Interactive map of the building showing real-time room statuses.",
+      "states": {
+        "loading": "Skeleton overlay on top of the blueprint background.",
+        "empty": "Illustration showing 'No floor plans assigned'.",
+        "error": "Error banner with 'Retry' button to fetch layout."
+      },
+      "layout": "Sticky top header with Building Dropdown (glass effect). The main canvas is an `expo-image` of a blueprint wrapped in a horizontal/vertical ScrollView or PanGestureHandler for panning. Rooms/Stairs/Hallways are rendered as absolutely positioned pill-shaped `Pressable`s over the blueprint. Pills use background colors tied to status: Gray (Untouched), Red (Teacher in), Yellow (In Progress), Green (Completed). Admin profile sees an 'Edit Mode' FAB to reposition/rename pills."
+    },
+    {
+      "name": "Room Detail (Bottom Sheet)",
+      "purpose": "Shows memos, photos, and tasks for a selected room from the Floor Plan.",
+      "states": {
+        "loading": "Spinner in the sheet content.",
+        "empty": "No tasks or memos text.",
+        "error": "Failed to load room details."
+      },
+      "layout": "Triggered via tapping a room pill. Uses `@gorhom/bottom-sheet`. Header: Room Name and Status pill. Content: Horizontal ScrollView for room photos, followed by a 'Memos' section (Teacher/Admin notes), and a vertical list of Task cards. Cleaners can tap tasks to complete them (Boss sees Redo option)."
+    },
+    {
+      "name": "Numbers Page",
+      "purpose": "Metrics dashboard tracking school start countdown and cleaning progress.",
+      "states": {
+        "loading": "Skeleton cards.",
+        "empty": "Zero progress metrics.",
+        "error": "Failed to fetch stats."
+      },
+      "layout": "Scrollable vertical list. Top Hero Card: Large typography 'Countdown to School Start' with `brandPrimary` text. Below: A 2-column grid of building progress cards. Each card contains the building name, a percentage, and a horizontal progress bar (filled with Green for completed rooms)."
+    },
+    {
+      "name": "Chat & DMs",
+      "purpose": "Messaging hub for Cleaners and Boss.",
+      "states": {
+        "loading": "Skeleton list of conversations.",
+        "empty": "Illustration 'No messages yet' with CTA 'Start a Chat'.",
+        "error": "Failed to connect to chat."
+      },
+      "layout": "Standard iOS-style chat list (Avatars/Initials + Name + Preview). Inside a chat: Apple Messages style bubbles (`surfaceTertiary` for received, `brandPrimary` for sent). Boss can send 'Tasks' within chat which render as special interactive cards within the message flow."
+    },
+    {
+      "name": "Photo Contest",
+      "purpose": "Weekly social feed for Cleaners and Boss to submit photos and vote.",
+      "states": {
+        "loading": "Skeleton image grid.",
+        "empty": "Empty state illustration: 'Be the first to submit a photo!'",
+        "error": "Failed to load contest feed."
+      },
+      "layout": "Instagram-style vertical feed. Each item: Submitter info header, large full-width image (with top-to-bottom gradient scrim if text overlays), and a row of action buttons (Upvote). Cleaners and Boss see a sticky FAB at the bottom to 'Submit Photo'."
+    }
+  ],
+  "images": {
+    "floor_plan_blueprint": {
+      "url": "https://images.unsplash.com/photo-1542621334-a254cf47733d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxhcmNoaXRlY3R1cmFsJTIwZmxvb3IlMjBwbGFuJTIwQmx1ZXByaW50fGVufDB8fHx8MTc4NTMyNDQ3Mnww&ixlib=rb-4.1.0&q=85",
+      "alt": "Architectural floor plan blueprint"
+    },
+    "room_photo_placeholder": {
+      "url": "https://images.unsplash.com/photo-1606761568499-6d2451b23c66?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAxODF8MHwxfHNlYXJjaHwxfHxjbGVhbiUyMG1vZGVybiUyMHVuaXZlcnNpdHklMjBjbGFzc3Jvb218ZW58MHx8fHwxNzg2NDU1MzQ1fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Clean modern university classroom"
+    },
+    "hallway_photo_placeholder": {
+      "url": "https://images.unsplash.com/photo-1599036495538-ee049546a069?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwxfHx1bml2ZXJzaXR5JTIwYnVpbGRpbmclMjBoYWxsd2F5fGVufDB8fHx8MTc4NjQ1NTM0MXww&ixlib=rb-4.1.0&q=85",
+      "alt": "University building hallway"
+    }
+  },
+  "haptics": {
+    "role_select": "selection",
+    "auth_submit": "impactMedium",
+    "room_pin_tap": "impactLight",
+    "task_complete": "notificationSuccess",
+    "task_redo": "notificationWarning",
+    "vote_photo": "impactMedium",
+    "send_message": "impactLight"
+  },
+  "instructions_to_main_agent": [
+    "Load custom fonts 'Geist' locally via expo-font. Do not use @expo-google-fonts.",
+    "Implement Role-Based Access Control (RBAC). The Bottom Tabs change based on role. Cleaners: Floor Plan, Chat, Photo Contest. Teachers: Floor Plan, Numbers. Boss: Floor Plan, Numbers, Chat, Photo Contest. Admin: Floor Plan (with Edit Mode), Numbers.",
+    "Floor Plan UI: Render the `floor_plan_blueprint` image as a background canvas inside a pan/zoom wrapper. Rooms are absolutely positioned buttons on top of it. Ensure you bind the 4 specific status colors (untouched=gray, teacher_in=red, in_progress=yellow, completed=green) directly to these pins.",
+    "The 'Teacher in' status uses `status_teacher_in` (#FF3B30). This is distinct from the brand primary #E41C38. Ensure teachers can tap their room to toggle this status.",
+    "For the Room Detail bottom sheet, stack room photos horizontally, followed by text memos, then a list of checkable tasks.",
+    "For the Numbers page, the countdown should be massive and highly legible, acting as the hero element.",
+    "Admin Edit Mode for Floor Plan: When the Admin signs in, they can toggle an 'Edit' state allowing them to drag and drop room pins, rename them, and resize them. Save these updated X/Y coordinates to state.",
+    "Always apply a dark gradient scrim (transparent to 80% surfaceInverse) behind text when overlaying on images (like the Photo Contest feed)."
+  ]
+}
