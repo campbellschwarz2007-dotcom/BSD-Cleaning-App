@@ -45,6 +45,10 @@ export const api = {
   pinStatus: (body: { role: string; name: string }) =>
     request("/auth/pin-status", { method: "POST", body: JSON.stringify(body) }),
   users: (role?: string) => request(`/users${role ? `?role=${role}` : ""}`),
+  resetPin: (userId: string) =>
+    request(`/users/${userId}/reset-pin`, { method: "POST" }),
+  deleteUser: (userId: string) =>
+    request(`/users/${userId}`, { method: "DELETE" }),
 
   // buildings & rooms
   buildings: () => request("/buildings"),

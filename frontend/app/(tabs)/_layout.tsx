@@ -20,6 +20,7 @@ export default function TabsLayout() {
     numbers: role === "cleaner" || role === "teacher" || role === "boss" || role === "admin",
     chat: role === "cleaner" || role === "boss",
     calendar: role === "teacher",
+    staff: role === "admin",
     // Everyone can view & vote in the contest; only cleaner/boss can submit.
     contest: true,
   };
@@ -77,6 +78,16 @@ export default function TabsLayout() {
             href: show.chat ? undefined : null,
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="chatbubbles" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="staff"
+          options={{
+            title: "Staff",
+            href: show.staff ? undefined : null,
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="people" size={size} color={color} />
             ),
           }}
         />

@@ -329,10 +329,43 @@ async def list_users(role: Optional[str] = None):
     out = []
     for u in users:
         u = clean(u)
+        u["has_pin"] = bool(u.get("pin_hash"))
         u.pop("password", None)
         u.pop("pin_hash", None)
         out.append(u)
     return out
+
+
+async def _require_admin(x_user_role: Optional[str]):
+    if x_user_role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+
+@api_router.post("/users/{user_id}/reset-pin")
+async def reset_pin(user_id: str, x_user_role: Optional[str] = Header(None)):
+    await _require_admin(x_user_role)
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user["role"] not in ("cleaner", "teacher"):
+        raise HTTPException(status_code=400, detail="Only cleaners and teachers use a PIN")
+    await db.users.update_one({"id": user_id}, {"$unset": {"pin_hash": ""}})
+    return {"status": "reset", "id": user_id}
+
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, x_user_role: Optional[str] = Header(None)):
+    await _require_admin(x_user_role)
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user["role"] == "admin":
+        raise HTTPException(status_code=400, detail="Cannot remove the admin account")
+    await db.users.delete_one({"id": user_id})
+    # remove from any conversation participant lists (e.g. All Chatroom, groups)
+    await db.conversations.update_many({}, {"$pull": {"participants": user_id}})
+    return {"status": "removed", "id": user_id}
+
 
 
 # ----------------------------- Buildings -----------------------------
