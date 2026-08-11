@@ -40,8 +40,10 @@ async function request(path: string, options: RequestInit = {}) {
 
 export const api = {
   // auth
-  signin: (body: { role: string; name?: string; password?: string }) =>
+  signin: (body: { role: string; name?: string; password?: string; pin?: string }) =>
     request("/auth/signin", { method: "POST", body: JSON.stringify(body) }),
+  pinStatus: (body: { role: string; name: string }) =>
+    request("/auth/pin-status", { method: "POST", body: JSON.stringify(body) }),
   users: (role?: string) => request(`/users${role ? `?role=${role}` : ""}`),
 
   // buildings & rooms
@@ -84,6 +86,17 @@ export const api = {
     request(`/rooms/${roomId}/photos`, { method: "POST", body: JSON.stringify({ image }) }),
   deleteRoomPhoto: (roomId: string, index: number) =>
     request(`/rooms/${roomId}/photos/${index}`, { method: "DELETE" }),
+
+  // room checklist
+  toggleChecklist: (roomId: string, itemId: string) =>
+    request(`/rooms/${roomId}/checklist/toggle`, {
+      method: "POST",
+      body: JSON.stringify({ item_id: itemId }),
+    }),
+  addChecklistItem: (roomId: string, text: string) =>
+    request(`/rooms/${roomId}/checklist`, { method: "POST", body: JSON.stringify({ text }) }),
+  deleteChecklistItem: (roomId: string, itemId: string) =>
+    request(`/rooms/${roomId}/checklist/${itemId}`, { method: "DELETE" }),
 
   // visits
   visits: (params: { room_id?: string; teacher_id?: string }) => {

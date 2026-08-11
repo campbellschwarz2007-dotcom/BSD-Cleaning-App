@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { storage } from "@/src/utils/storage";
 import { setCurrentUser, User } from "@/src/api";
+import { ensureNotificationPermission } from "@/src/utils/notify";
 
 type AuthState = {
   user: User | null;
@@ -28,6 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (saved && saved.id) {
         setCurrentUser(saved);
         setUser(saved);
+        ensureNotificationPermission();
       }
       setLoading(false);
     })();
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(u);
     setUser(u);
     await storage.setItem(KEY, u as any);
+    ensureNotificationPermission();
   };
 
   const signOut = async () => {

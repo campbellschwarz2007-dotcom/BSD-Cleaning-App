@@ -64,3 +64,8 @@ Multi-role mobile app for a school cleaning crew. Roles: Cleaner, Teacher, Boss,
 - Contest Winner: Contest feed shows a celebratory "This Week's Winner" gradient banner (crown, name, votes, thumbnail) for the top-voted submission — visible to every role.
 - Floor plan panning: fixed so you can freely scroll/pan around the map while zoomed in (clamped to image bounds); removed a gesture-blocking bug that stopped view-mode panning.
 - Added accessible on-screen zoom +/- buttons on the floor plan (in addition to pinch / double-tap) so anyone can zoom without gestures.
+
+## Iteration 5 (2026-06 fork)
+- PIN sign-in: Cleaners & Teachers now sign in in two steps — enter name, then PIN. First sign-in for a name CREATES a 4-digit PIN (bcrypt-hashed server-side); subsequent sign-ins require it. New endpoint POST /api/auth/pin-status returns {exists, has_pin} so the UI shows "Create a PIN" vs "Enter your PIN". Legacy/seeded names have no PIN and set one on next sign-in. Signin responses now sanitized via pub() (never leak pin_hash/password). Boss/Admin password login unchanged.
+- Local notifications (replaces push): messages now trigger on-device pop-up alerts while the app is open. Global MessageNotifier polls conversations every 8s and fires expo-notifications local notifications for new messages from others. No Firebase/native build required (foreground alerts). Web = no-op.
+- Teachers: cleaning Checklist and Photos sections are now hidden in the room sheet for the teacher role (they still see status, memos/notes, and the booking calendar).

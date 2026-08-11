@@ -48,6 +48,11 @@ export default function FloorPlanScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [note, setNote] = useState("");
+  const [bNameDraft, setBNameDraft] = useState("");
+
+  useEffect(() => {
+    setBNameDraft(selected?.name || "");
+  }, [selected?.id, selected?.name, manageOpen]);
 
   const isAdmin = user?.role === "admin";
 
@@ -309,7 +314,7 @@ export default function FloorPlanScreen() {
           <View style={styles.zoomHint} pointerEvents="none">
             <Ionicons name={editMode && isAdmin ? "move" : "scan"} size={14} color="#fff" />
             <Text style={styles.zoomHintText}>
-              {editMode && isAdmin ? "Drag to move · pull corner to resize" : "Pinch or double-tap to zoom"}
+              {editMode && isAdmin ? "Drag to move · pull corner to resize" : "Pinch to zoom"}
             </Text>
           </View>
         </View>
@@ -373,13 +378,24 @@ export default function FloorPlanScreen() {
               <Text style={styles.manageTitle}>Manage building</Text>
 
               <Text style={styles.manageLabel}>Building name</Text>
-              <TextInput
-                testID="building-name-input"
-                style={styles.manageInput}
-                defaultValue={selected?.name}
-                key={selected?.id}
-                onEndEditing={(e) => renameBuilding(e.nativeEvent.text)}
-              />
+              <View style={styles.nameEditRow}>
+                <TextInput
+                  testID="building-name-input"
+                  style={[styles.manageInput, { flex: 1, marginBottom: 0 }]}
+                  value={bNameDraft}
+                  onChangeText={setBNameDraft}
+                  placeholder="Building name"
+                  placeholderTextColor={colors.muted}
+                  onSubmitEditing={() => renameBuilding(bNameDraft)}
+                />
+                <Pressable
+                  testID="save-building-name"
+                  onPress={() => renameBuilding(bNameDraft)}
+                  style={styles.saveNameBtn}
+                >
+                  <Text style={styles.saveNameText}>Save</Text>
+                </Pressable>
+              </View>
               <View style={styles.manageRow}>
                 <Pressable testID="add-building-btn" onPress={addBuilding} style={styles.manageBtnGhost}>
                   <Ionicons name="add" size={18} color={colors.brandPrimary} />
@@ -420,6 +436,7 @@ export default function FloorPlanScreen() {
                     testID={`floor-name-input-${f.id}`}
                     style={[styles.manageInput, { flex: 1, marginBottom: 0 }]}
                     defaultValue={f.name}
+                    onSubmitEditing={(e) => renameFloor(f.id, e.nativeEvent.text)}
                     onEndEditing={(e) => renameFloor(f.id, e.nativeEvent.text)}
                   />
                   <Pressable
@@ -604,6 +621,14 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
     marginBottom: spacing.md,
   },
+  nameEditRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
+  saveNameBtn: {
+    backgroundColor: colors.brandPrimary,
+    borderRadius: radius.md,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  saveNameText: { color: "#fff", fontWeight: "700", fontSize: 15 },
   manageRow: { flexDirection: "row", gap: spacing.sm },
   rowBetweenManage: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   manageBtnGhost: {

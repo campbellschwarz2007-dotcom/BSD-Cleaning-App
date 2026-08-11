@@ -1,15 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Text, StyleSheet, Pressable, View } from "react-native";
+import { Text, StyleSheet } from "react-native";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   runOnJS,
-  withTiming,
 } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
 
 import { colors, radius, statusColor, statusTextColor, shadow } from "@/src/theme";
 
@@ -151,97 +148,79 @@ export default function FloorCanvas({
 }) {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
-  const tx = useSharedValue(0);
-  const ty = useSharedValue(0);
-  const savedTx = useSharedValue(0);
-  const savedTy = useSharedValue(0);
+  const ox = useSharedValue(0);
+  const oy = useSharedValue(0);
+  const savedOx = useSharedValue(0);
+  const savedOy = useSharedValue(0);
   const panRef = React.useRef<any>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const [natural, setNatural] = useState({ iw: 0, ih: 0 });
 
-  const buzz = () => Haptics.selectionAsync();
+  // Content is laid out at the blueprint's natural aspect ratio: full width,
+  // height proportional to the image (so tall blueprints become scrollable).
+  const baseW = size.w;
+  const ratio = natural.iw ? natural.ih / natural.iw : 0;
+  const baseH = ratio ? size.w * ratio : size.h;
+
+  // Recenter / top-align whenever the surface or blueprint changes.
+  useEffect(() => {
+    if (!size.w) return;
+    scale.value = 1;
+    savedScale.value = 1;
+    const ny = baseH <= size.h ? (size.h - baseH) / 2 : 0;
+    ox.value = 0;
+    oy.value = ny;
+    savedOx.value = 0;
+    savedOy.value = ny;
+  }, [size.w, size.h, natural.iw, natural.ih, blueprintUri]);
 
   const pinch = Gesture.Pinch()
     .onUpdate((e) => {
       const next = savedScale.value * e.scale;
-      scale.value = Math.min(4, Math.max(1, next));
+      const s = Math.min(4, Math.max(1, next));
+      scale.value = s;
+      const scaledW = baseW * s;
+      const scaledH = baseH * s;
+      ox.value =
+        scaledW <= size.w
+          ? (size.w - scaledW) / 2
+          : Math.min(0, Math.max(size.w - scaledW, ox.value));
+      oy.value =
+        scaledH <= size.h
+          ? (size.h - scaledH) / 2
+          : Math.min(0, Math.max(size.h - scaledH, oy.value));
     })
     .onEnd(() => {
       savedScale.value = scale.value;
-      if (scale.value <= 1.02) {
-        scale.value = withTiming(1);
-        tx.value = withTiming(0);
-        ty.value = withTiming(0);
-        savedScale.value = 1;
-        savedTx.value = 0;
-        savedTy.value = 0;
-      } else {
-        const maxX = (size.w * (scale.value - 1)) / 2;
-        const maxY = (size.h * (scale.value - 1)) / 2;
-        tx.value = Math.min(maxX, Math.max(-maxX, tx.value));
-        ty.value = Math.min(maxY, Math.max(-maxY, ty.value));
-        savedTx.value = tx.value;
-        savedTy.value = ty.value;
-      }
+      savedOx.value = ox.value;
+      savedOy.value = oy.value;
     });
 
   const pan = Gesture.Pan()
     .withRef(panRef)
     .averageTouches(true)
     .onUpdate((e) => {
-      const maxX = (size.w * (scale.value - 1)) / 2;
-      const maxY = (size.h * (scale.value - 1)) / 2;
-      const nx = savedTx.value + e.translationX;
-      const ny = savedTy.value + e.translationY;
-      tx.value = Math.min(maxX, Math.max(-maxX, nx));
-      ty.value = Math.min(maxY, Math.max(-maxY, ny));
+      const s = scale.value;
+      const scaledW = baseW * s;
+      const scaledH = baseH * s;
+      let nx = savedOx.value + e.translationX;
+      let ny = savedOy.value + e.translationY;
+      nx = scaledW <= size.w ? (size.w - scaledW) / 2 : Math.min(0, Math.max(size.w - scaledW, nx));
+      ny = scaledH <= size.h ? (size.h - scaledH) / 2 : Math.min(0, Math.max(size.h - scaledH, ny));
+      ox.value = nx;
+      oy.value = ny;
     })
     .onEnd(() => {
-      savedTx.value = tx.value;
-      savedTy.value = ty.value;
+      savedOx.value = ox.value;
+      savedOy.value = oy.value;
     });
 
-  const doubleTap = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd(() => {
-      if (scale.value > 1) {
-        scale.value = withTiming(1);
-        tx.value = withTiming(0);
-        ty.value = withTiming(0);
-        savedScale.value = 1;
-        savedTx.value = 0;
-        savedTy.value = 0;
-      } else {
-        scale.value = withTiming(2);
-        savedScale.value = 2;
-      }
-      runOnJS(buzz)();
-    });
-
-  const composed = Gesture.Simultaneous(pinch, pan, doubleTap);
-
-  const zoomBy = (factor: number) => {
-    const next = Math.min(4, Math.max(1, savedScale.value * factor));
-    scale.value = withTiming(next);
-    savedScale.value = next;
-    if (next <= 1) {
-      tx.value = withTiming(0);
-      ty.value = withTiming(0);
-      savedTx.value = 0;
-      savedTy.value = 0;
-    } else {
-      const maxX = (size.w * (next - 1)) / 2;
-      const maxY = (size.h * (next - 1)) / 2;
-      tx.value = Math.min(maxX, Math.max(-maxX, tx.value));
-      ty.value = Math.min(maxY, Math.max(-maxY, ty.value));
-      savedTx.value = tx.value;
-      savedTy.value = ty.value;
-    }
-  };
+  const composed = Gesture.Simultaneous(pinch, pan);
 
   const contentStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: tx.value },
-      { translateY: ty.value },
+      { translateX: ox.value + (baseW / 2) * (scale.value - 1) },
+      { translateY: oy.value + (baseH / 2) * (scale.value - 1) },
       { scale: scale.value },
     ],
   }));
@@ -254,13 +233,21 @@ export default function FloorCanvas({
           setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })
         }
       >
-        <Animated.View
-          style={[styles.content, { width: size.w, height: size.h }, contentStyle]}
-        >
-          <Image source={{ uri: blueprintUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
-          <Animated.View style={styles.tint} pointerEvents="none" />
-          {size.w > 0 &&
-            rooms.map((room) => (
+        {size.w > 0 && (
+          <Animated.View
+            style={[styles.content, { width: baseW, height: baseH }, contentStyle]}
+          >
+            <Image
+              source={{ uri: blueprintUri }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              onLoad={(e) => {
+                const src: any = e.source;
+                if (src?.width && src?.height) setNatural({ iw: src.width, ih: src.height });
+              }}
+            />
+            <Animated.View style={styles.tint} pointerEvents="none" />
+            {rooms.map((room) => (
               <DraggablePin
                 key={room.id}
                 room={room}
@@ -271,16 +258,8 @@ export default function FloorCanvas({
                 onSaveRoom={onSaveRoom}
               />
             ))}
-        </Animated.View>
-
-        <View style={styles.zoomControls} pointerEvents="box-none">
-          <Pressable testID="zoom-in-btn" onPress={() => zoomBy(1.5)} style={styles.zoomBtn}>
-            <Ionicons name="add" size={22} color={colors.onSurface} />
-          </Pressable>
-          <Pressable testID="zoom-out-btn" onPress={() => zoomBy(1 / 1.5)} style={styles.zoomBtn}>
-            <Ionicons name="remove" size={22} color={colors.onSurface} />
-          </Pressable>
-        </View>
+          </Animated.View>
+        )}
       </Animated.View>
     </GestureDetector>
   );
@@ -314,16 +293,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderWidth: 2,
     borderColor: colors.brandPrimary,
-    ...shadow.card,
-  },
-  zoomControls: { position: "absolute", left: 16, bottom: 16, gap: 8 },
-  zoomBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.95)",
-    alignItems: "center",
-    justifyContent: "center",
     ...shadow.card,
   },
 });

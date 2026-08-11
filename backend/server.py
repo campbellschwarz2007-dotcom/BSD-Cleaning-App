@@ -8,6 +8,9 @@ from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
+import httpx
+import re
+import bcrypt
 from datetime import datetime, timezone, timedelta
 
 
@@ -27,6 +30,12 @@ logging.basicConfig(level=logging.INFO)
 ADMIN_PASSWORD = "gobigred"
 BOSS_PASSWORD = "scharf"
 
+# ----------------------------- Push (Emergent managed relay) -----------------------------
+PUSH_BASE_URL = "https://integrations.emergentagent.com"
+PUSH_KEY = os.environ.get("EMERGENT_PUSH_KEY", "placeholder")
+_push_client = httpx.AsyncClient(
+    base_url=PUSH_BASE_URL, headers={"X-Push-Key": PUSH_KEY}, timeout=10.0)
+
 # ----------------------------- Helpers -----------------------------
 
 def now_iso():
@@ -43,11 +52,94 @@ def clean(doc):
     return doc
 
 
+PIN_RE = re.compile(r"^\d{4}$")
+
+
+def hash_pin(pin: str) -> str:
+    return bcrypt.hashpw(pin.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_pin(pin: str, stored_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(pin.encode("utf-8"), (stored_hash or "").encode("utf-8"))
+    except Exception:
+        return False
+
+
+def pub(user: dict) -> dict:
+    """Public-safe user projection (never leak pin_hash / password)."""
+    return {"id": user["id"], "name": user["name"], "role": user["role"]}
+
+
+DEFAULT_CHECKLISTS = {
+    "room": ["Empty all trash", "Wipe desks & tables", "Sweep & mop floor",
+             "Clean windows & sills", "Sanitize high-touch surfaces"],
+    "hallway": ["Sweep & mop floor", "Empty trash bins", "Wipe lockers",
+                "Spot-clean walls & doors"],
+    "stairs": ["Sweep every step", "Mop steps", "Wipe handrails", "Empty landing trash"],
+    "entryway": ["Sweep & mop", "Clean glass doors", "Vacuum entry mats", "Empty trash"],
+}
+
+
+def make_checklist(room_type):
+    items = DEFAULT_CHECKLISTS.get(room_type, DEFAULT_CHECKLISTS["room"])
+    return [{"id": new_id(), "text": t, "done": False} for t in items]
+
+
 async def get_actor(x_user_id: Optional[str], x_user_role: Optional[str]):
     if not x_user_id:
         return None
     user = await db.users.find_one({"id": x_user_id})
     return clean(user)
+
+
+# ----------------------------- Push helpers -----------------------------
+
+class RegisterPushBody(BaseModel):
+    user_id: str
+    platform: str
+    device_token: str
+
+
+@api_router.post("/register-push", status_code=201)
+async def register_push(body: RegisterPushBody):
+    resp = await _push_client.post("/api/v1/push/users/register", json=body.model_dump())
+    if resp.status_code == 401:
+        raise HTTPException(500, "EMERGENT_PUSH_KEY missing or invalid")
+    if resp.status_code >= 500:
+        raise HTTPException(502, "Push provider unavailable")
+    resp.raise_for_status()
+    return {"status": "registered"}
+
+
+async def send_push(recipients, data, idempotency_key=None):
+    if not recipients:
+        return
+    if "title" not in data or "message" not in data:
+        raise ValueError("data must include title and message")
+    payload = {"recipients": recipients[:100], "data": data}
+    if idempotency_key:
+        payload["$idempotency_key"] = idempotency_key
+    resp = await _push_client.post("/api/v1/push/trigger", json=payload)
+    resp.raise_for_status()
+
+
+async def _notify_conversation(conversation_id, sender_id, sender_name, text):
+    try:
+        convo = await db.conversations.find_one({"id": conversation_id})
+        if not convo:
+            return
+        recipients = [p for p in convo.get("participants", [])
+                      if p and p != sender_id and p != "system"]
+        if not recipients:
+            return
+        is_all = convo.get("type") == "all"
+        title = "All Chatroom" if is_all else sender_name
+        body = f"{sender_name}: {text}" if is_all else text
+        await send_push(recipients, {"title": title, "message": body,
+                                     "action_url": f"/chat/{conversation_id}"})
+    except Exception as e:
+        logger.warning(f"Push failed (non-blocking): {e}")
 
 
 # ----------------------------- Models -----------------------------
@@ -56,6 +148,12 @@ class SignInInput(BaseModel):
     role: str
     name: Optional[str] = None
     password: Optional[str] = None
+    pin: Optional[str] = None
+
+
+class PinStatusInput(BaseModel):
+    role: str
+    name: str
 
 
 class Building(BaseModel):
@@ -108,6 +206,14 @@ class PhotoInput(BaseModel):
     image: str
 
 
+class ChecklistAdd(BaseModel):
+    text: str
+
+
+class ChecklistToggle(BaseModel):
+    item_id: str
+
+
 class TaskInput(BaseModel):
     title: str
     description: Optional[str] = ""
@@ -141,6 +247,18 @@ class VisitInput(BaseModel):
 
 # ----------------------------- Auth -----------------------------
 
+@api_router.post("/auth/pin-status")
+async def pin_status(inp: PinStatusInput):
+    role = inp.role.lower()
+    if role not in ("cleaner", "teacher"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+    name = (inp.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name required")
+    user = await db.users.find_one({"role": role, "name": name})
+    return {"exists": bool(user), "has_pin": bool(user and user.get("pin_hash"))}
+
+
 @api_router.post("/auth/signin")
 async def signin(inp: SignInInput):
     role = inp.role.lower()
@@ -153,7 +271,7 @@ async def signin(inp: SignInInput):
             user = {"id": new_id(), "name": "Admin", "role": "admin",
                     "password": None, "created_at": now_iso()}
             await db.users.insert_one(dict(user))
-        return clean(user)
+        return pub(user)
 
     if role == "boss":
         if not inp.password or inp.password.strip().lower() != BOSS_PASSWORD:
@@ -165,21 +283,37 @@ async def signin(inp: SignInInput):
             await db.users.insert_one(dict(user))
             await db.conversations.update_one(
                 {"type": "all"}, {"$addToSet": {"participants": user["id"]}})
-        return clean(user)
+        return pub(user)
 
     if role in ("cleaner", "teacher"):
         if not inp.name or not inp.name.strip():
             raise HTTPException(status_code=400, detail="Name required")
         name = inp.name.strip()
+        pin = (inp.pin or "").strip()
         user = await db.users.find_one({"role": role, "name": name})
+
         if not user:
-            user = {"id": new_id(), "name": name, "role": role,
-                    "password": None, "created_at": now_iso()}
+            # First sign-in for this name: they must set a 4-digit PIN.
+            if not PIN_RE.fullmatch(pin):
+                raise HTTPException(status_code=400, detail="Please set a 4-digit PIN")
+            user = {"id": new_id(), "name": name, "role": role, "password": None,
+                    "pin_hash": hash_pin(pin), "created_at": now_iso()}
             await db.users.insert_one(dict(user))
             if role == "cleaner":
                 await db.conversations.update_one(
                     {"type": "all"}, {"$addToSet": {"participants": user["id"]}})
-        return clean(user)
+            return pub(user)
+
+        if user.get("pin_hash"):
+            if not verify_pin(pin, user["pin_hash"]):
+                raise HTTPException(status_code=401, detail="Incorrect PIN")
+            return pub(user)
+
+        # Existing (legacy/seeded) user without a PIN -> let them set one now.
+        if not PIN_RE.fullmatch(pin):
+            raise HTTPException(status_code=400, detail="Please set a 4-digit PIN")
+        await db.users.update_one({"id": user["id"]}, {"$set": {"pin_hash": hash_pin(pin)}})
+        return pub(user)
 
     raise HTTPException(status_code=400, detail="Invalid role")
 
@@ -196,6 +330,7 @@ async def list_users(role: Optional[str] = None):
     for u in users:
         u = clean(u)
         u.pop("password", None)
+        u.pop("pin_hash", None)
         out.append(u)
     return out
 
@@ -296,7 +431,8 @@ async def get_room(room_id: str):
 
 @api_router.post("/rooms")
 async def create_room(inp: RoomInput):
-    doc = {"id": new_id(), **inp.dict(), "photos": [], "created_at": now_iso()}
+    doc = {"id": new_id(), **inp.dict(), "photos": [],
+           "checklist": make_checklist(inp.type), "created_at": now_iso()}
     await db.rooms.insert_one(dict(doc))
     return clean(doc)
 
@@ -379,7 +515,39 @@ async def delete_room_photo(room_id: str, index: int):
     return clean(r)
 
 
-# ----------------------------- Teacher visits -----------------------------
+# ----------------------------- Room checklist -----------------------------
+
+@api_router.post("/rooms/{room_id}/checklist/toggle")
+async def toggle_checklist(room_id: str, inp: ChecklistToggle):
+    r = await db.rooms.find_one({"id": room_id})
+    if not r:
+        raise HTTPException(404, "Room not found")
+    checklist = r.get("checklist", [])
+    for item in checklist:
+        if item["id"] == inp.item_id:
+            item["done"] = not item.get("done", False)
+    await db.rooms.update_one({"id": room_id}, {"$set": {"checklist": checklist}})
+    r = await db.rooms.find_one({"id": room_id})
+    return clean(r)
+
+
+@api_router.post("/rooms/{room_id}/checklist")
+async def add_checklist_item(room_id: str, inp: ChecklistAdd):
+    item = {"id": new_id(), "text": inp.text, "done": False}
+    await db.rooms.update_one({"id": room_id}, {"$push": {"checklist": item}})
+    r = await db.rooms.find_one({"id": room_id})
+    if not r:
+        raise HTTPException(404, "Room not found")
+    return clean(r)
+
+
+@api_router.delete("/rooms/{room_id}/checklist/{item_id}")
+async def delete_checklist_item(room_id: str, item_id: str):
+    await db.rooms.update_one({"id": room_id}, {"$pull": {"checklist": {"id": item_id}}})
+    r = await db.rooms.find_one({"id": room_id})
+    if not r:
+        raise HTTPException(404, "Room not found")
+    return clean(r)
 
 @api_router.get("/visits")
 async def list_visits(room_id: Optional[str] = None, teacher_id: Optional[str] = None):
@@ -417,8 +585,10 @@ async def add_visit(room_id: str, inp: VisitInput,
             if room and room.get("status") == "teacher_in":
                 await db.rooms.update_one({"id": room_id}, {"$set": {"status": "untouched"}})
         return {"toggled": "removed"}
+    room = await db.rooms.find_one({"id": room_id})
     doc = {"id": new_id(), "room_id": room_id, "teacher_id": actor["id"],
-           "teacher_name": actor["name"], "date": inp.date, "created_at": now_iso()}
+           "teacher_name": actor["name"], "room_name": room["name"] if room else None,
+           "date": inp.date, "created_at": now_iso()}
     await db.visits.insert_one(dict(doc))
     # marking a room turns it red ("teacher in")
     await db.rooms.update_one({"id": room_id}, {"$set": {"status": "teacher_in"}})
@@ -427,11 +597,12 @@ async def add_visit(room_id: str, inp: VisitInput,
 
 # ----------------------------- Tasks -----------------------------
 
-async def _system_message(conversation_id, text, task_id=None):
+async def _system_message(conversation_id, text, task_id=None, exclude_id="system"):
     doc = {"id": new_id(), "conversation_id": conversation_id,
            "sender_id": "system", "sender_name": "Boss", "text": text,
            "task_id": task_id, "created_at": now_iso()}
     await db.messages.insert_one(dict(doc))
+    await _notify_conversation(conversation_id, exclude_id, "Boss", text)
 
 
 async def _dm_conversation(user_a, user_b):
@@ -476,7 +647,8 @@ async def create_task(inp: TaskInput,
     await db.tasks.insert_one(dict(doc))
     for uid in inp.assigned_to:
         convo = await _dm_conversation(actor["id"], uid)
-        await _system_message(convo["id"], f"New task: {inp.title}", task_id=doc["id"])
+        await _system_message(convo["id"], f"New task: {inp.title}",
+                              task_id=doc["id"], exclude_id=actor["id"])
     return clean(doc)
 
 
@@ -513,7 +685,8 @@ async def redo_task(task_id: str,
     if completed_by:
         convo = await _dm_conversation(actor["id"], completed_by)
         await _system_message(
-            convo["id"], f"Please redo this task: {t['title']}", task_id=task_id)
+            convo["id"], f"Please redo this task: {t['title']}",
+            task_id=task_id, exclude_id=actor["id"])
     t = await db.tasks.find_one({"id": task_id})
     return clean(t)
 
@@ -602,6 +775,7 @@ async def send_message(conversation_id: str, inp: MessageInput,
            "sender_id": x_user_id, "sender_name": user["name"],
            "text": inp.text, "task_id": None, "created_at": now_iso()}
     await db.messages.insert_one(dict(doc))
+    await _notify_conversation(conversation_id, x_user_id, user["name"], inp.text)
     return clean(doc)
 
 
@@ -855,10 +1029,19 @@ async def migrate_floors():
             {"$set": {"floor_id": floor["id"]}})
 
 
+async def migrate_checklists():
+    """Give any room missing a checklist a default one based on its type."""
+    rooms = await db.rooms.find({"checklist": {"$exists": False}}).to_list(2000)
+    for r in rooms:
+        await db.rooms.update_one(
+            {"id": r["id"]}, {"$set": {"checklist": make_checklist(r.get("type", "room"))}})
+
+
 @app.on_event("startup")
 async def on_startup():
     await seed()
     await migrate_floors()
+    await migrate_checklists()
 
 
 @api_router.get("/")

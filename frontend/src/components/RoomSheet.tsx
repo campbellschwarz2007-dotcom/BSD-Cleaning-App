@@ -46,6 +46,7 @@ export default function RoomSheet({
   const [visits, setVisits] = useState<any[]>([]);
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [memoText, setMemoText] = useState("");
+  const [newItem, setNewItem] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
   const [assignees, setAssignees] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -75,6 +76,7 @@ export default function RoomSheet({
   useEffect(() => {
     if (visible && room) {
       setMemoText("");
+      setNewItem("");
       setTaskTitle("");
       setAssignees([]);
       setNote("");
@@ -113,6 +115,27 @@ export default function RoomSheet({
   const removePhoto = async (index: number) => {
     await api.deleteRoomPhoto(room.id, index);
     onChanged();
+  };
+
+  const toggleCheck = async (itemId: string) => {
+    Haptics.selectionAsync();
+    await api.toggleChecklist(room.id, itemId);
+    await onChanged();
+  };
+  const addChecklistItem = async () => {
+    if (!newItem.trim()) return;
+    setBusy(true);
+    try {
+      await api.addChecklistItem(room.id, newItem.trim());
+      setNewItem("");
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const removeChecklistItem = async (itemId: string) => {
+    await api.deleteChecklistItem(room.id, itemId);
+    await onChanged();
   };
 
   const addMemo = async () => {
@@ -282,8 +305,58 @@ export default function RoomSheet({
                 </View>
               )}
 
-              {/* PHOTOS (not for structure-only elements) */}
-              {!isStructure && !editMode && (
+              {/* CHECKLIST (hidden for teachers) */}
+              {!editMode && role !== "teacher" && (
+                <View style={styles.section}>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.sectionTitle}>Checklist</Text>
+                    <Text style={styles.muted}>
+                      {(room.checklist || []).filter((i: any) => i.done).length}/
+                      {(room.checklist || []).length}
+                    </Text>
+                  </View>
+                  {(room.checklist || []).map((it: any) => (
+                    <Pressable
+                      key={it.id}
+                      testID={`check-${it.id}`}
+                      onPress={() => toggleCheck(it.id)}
+                      style={styles.checkRow}
+                    >
+                      <Ionicons
+                        name={it.done ? "checkbox" : "square-outline"}
+                        size={22}
+                        color={it.done ? colors.success : colors.muted}
+                      />
+                      <Text style={[styles.checkText, it.done && styles.checkDone]}>{it.text}</Text>
+                      {role === "admin" && (
+                        <Pressable
+                          testID={`check-del-${it.id}`}
+                          onPress={() => removeChecklistItem(it.id)}
+                          hitSlop={8}
+                        >
+                          <Ionicons name="close" size={16} color={colors.muted} />
+                        </Pressable>
+                      )}
+                    </Pressable>
+                  ))}
+                  <View style={styles.inlineInputRow}>
+                    <TextInput
+                      testID="checklist-input"
+                      style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                      placeholder="Add checklist item…"
+                      placeholderTextColor={colors.muted}
+                      value={newItem}
+                      onChangeText={setNewItem}
+                    />
+                    <Pressable testID="checklist-add" onPress={addChecklistItem} style={styles.sendBtn}>
+                      <Ionicons name="add" size={20} color="#fff" />
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
+              {/* PHOTOS (not for structure-only elements; hidden for teachers) */}
+              {!isStructure && !editMode && role !== "teacher" && (
                 <View style={styles.section}>
                   <View style={styles.rowBetween}>
                     <Text style={styles.sectionTitle}>Photos</Text>
@@ -703,4 +776,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   dragHintText: { flex: 1, color: colors.onBrandSecondary, fontSize: 13, lineHeight: 18 },
+  checkRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 7 },
+  checkText: { flex: 1, fontSize: 15, color: colors.onSurface },
+  checkDone: { textDecorationLine: "line-through", color: colors.muted },
 });

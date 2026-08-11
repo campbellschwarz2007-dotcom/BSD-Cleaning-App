@@ -42,6 +42,9 @@ export default function AuthScreen() {
   const [role, setRole] = useState<Role | null>(null);
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
+  const [step, setStep] = useState<"name" | "pin">("name");
+  const [hasPin, setHasPin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -50,7 +53,38 @@ export default function AuthScreen() {
     setRole(r);
     setName("");
     setPassword("");
+    setPin("");
+    setStep("name");
+    setHasPin(false);
     setError("");
+  };
+
+  const closeSheet = () => {
+    setRole(null);
+    setStep("name");
+    setPin("");
+    setError("");
+  };
+
+  const needsName = role === "cleaner" || role === "teacher";
+  const needsPassword = role === "boss" || role === "admin";
+
+  // Step 1 for cleaner/teacher: look up whether this name already has a PIN.
+  const continueToPin = async () => {
+    if (!role || !name.trim()) return;
+    setError("");
+    setLoading(true);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const status = await api.pinStatus({ role, name: name.trim() });
+      setHasPin(!!status.has_pin);
+      setPin("");
+      setStep("pin");
+    } catch (e: any) {
+      setError(e.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const submit = async () => {
@@ -60,12 +94,14 @@ export default function AuthScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const body: any = { role };
-      if (role === "cleaner" || role === "teacher") body.name = name;
-      if (role === "boss") body.password = password;
-      if (role === "admin") body.password = password;
+      if (needsName) {
+        body.name = name.trim();
+        body.pin = pin;
+      }
+      if (needsPassword) body.password = password;
       const user = await api.signin(body);
       await signIn(user);
-      setRole(null);
+      closeSheet();
       router.replace("/(tabs)/floorplan");
     } catch (e: any) {
       setError(e.message || "Sign in failed");
@@ -74,11 +110,10 @@ export default function AuthScreen() {
     }
   };
 
-  const needsName = role === "cleaner" || role === "teacher";
-  const needsPassword = role === "boss" || role === "admin";
-  const canSubmit =
-    (!needsName || name.trim().length > 0) &&
-    (!needsPassword || password.length > 0);
+  const canContinue = name.trim().length > 0;
+  const canSubmit = needsPassword
+    ? password.length > 0
+    : pin.length === 4;
 
   return (
     <LinearGradient
@@ -126,20 +161,20 @@ export default function AuthScreen() {
         visible={role !== null}
         transparent
         animationType="slide"
-        onRequestClose={() => setRole(null)}
+        onRequestClose={closeSheet}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.modalRoot}
         >
-          <Pressable style={styles.backdrop} onPress={() => setRole(null)} />
+          <Pressable style={styles.backdrop} onPress={closeSheet} />
           <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing.xl }]}>
             <View style={styles.handle} />
             <Text style={styles.sheetTitle}>
               Sign in as {role ? role.charAt(0).toUpperCase() + role.slice(1) : ""}
             </Text>
 
-            {needsName && (
+            {needsName && step === "name" && (
               <TextInput
                 testID="signin-name-input"
                 style={styles.input}
@@ -149,9 +184,40 @@ export default function AuthScreen() {
                 onChangeText={setName}
                 autoFocus
                 autoCapitalize="words"
-                returnKeyType={needsPassword ? "next" : "done"}
+                returnKeyType="next"
+                onSubmitEditing={canContinue ? continueToPin : undefined}
               />
             )}
+
+            {needsName && step === "pin" && (
+              <>
+                <Text style={styles.pinLabel}>
+                  {hasPin
+                    ? `Enter ${name.trim().split(" ")[0]}'s 4-digit PIN`
+                    : "Create a 4-digit PIN"}
+                </Text>
+                {!hasPin && (
+                  <Text style={styles.pinHint}>
+                    Use this PIN to sign in next time — remember it.
+                  </Text>
+                )}
+                <TextInput
+                  testID="signin-pin-input"
+                  style={[styles.input, styles.pinInput]}
+                  placeholder="••••"
+                  placeholderTextColor={colors.muted}
+                  value={pin}
+                  onChangeText={(v) => setPin(v.replace(/\D/g, "").slice(0, 4))}
+                  autoFocus
+                  keyboardType="number-pad"
+                  secureTextEntry
+                  maxLength={4}
+                  returnKeyType="done"
+                  onSubmitEditing={canSubmit ? submit : undefined}
+                />
+              </>
+            )}
+
             {needsPassword && (
               <TextInput
                 testID="signin-password-input"
@@ -173,18 +239,35 @@ export default function AuthScreen() {
               </Text>
             ) : null}
 
-            <Pressable
-              testID="signin-submit"
-              disabled={!canSubmit || loading}
-              onPress={submit}
-              style={[styles.submit, (!canSubmit || loading) && styles.submitDisabled]}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.submitText}>Continue</Text>
-              )}
-            </Pressable>
+            {needsName && step === "name" ? (
+              <Pressable
+                testID="signin-continue"
+                disabled={!canContinue || loading}
+                onPress={continueToPin}
+                style={[styles.submit, (!canContinue || loading) && styles.submitDisabled]}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitText}>Continue</Text>
+                )}
+              </Pressable>
+            ) : (
+              <Pressable
+                testID="signin-submit"
+                disabled={!canSubmit || loading}
+                onPress={submit}
+                style={[styles.submit, (!canSubmit || loading) && styles.submitDisabled]}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitText}>
+                    {needsName && !hasPin ? "Set PIN & Continue" : "Continue"}
+                  </Text>
+                )}
+              </Pressable>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -258,6 +341,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   sheetTitle: { fontSize: 20, fontWeight: "800", color: colors.onSurface, marginBottom: spacing.lg },
+  pinLabel: { fontSize: 15, fontWeight: "700", color: colors.onSurface, marginBottom: spacing.xs },
+  pinHint: { fontSize: 13, color: colors.muted, marginBottom: spacing.md },
+  pinInput: { textAlign: "center", letterSpacing: 12, fontSize: 22, fontWeight: "700" },
   input: {
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.md,

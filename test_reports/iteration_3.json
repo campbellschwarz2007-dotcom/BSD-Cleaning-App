@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 3 backend + frontend verified end-to-end. Backend pytest: 41/41 PASS (100%) — added TestChecklist (5 tests), TestPush (2 tests), and augmented TestVisits to assert visit.room_name is populated on POST and returned by GET /api/visits?teacher_id=. Frontend (mobile viewport 390x844) — every requested user-facing change works: (1) PINCH-ONLY ZOOM: zoom-in-btn/zoom-out-btn are absent from the DOM and the 'Pinch to zoom' hint renders (count=1). No double-tap zoom code path remains. (2) BUILDING RENAME FIX (bug): Admin signed in with 'gobigred' -> opened manage-building-btn -> typed into 'building-name-input' -> tapped 'save-building-name' -> header picker text updated from 'Memorial Hall' to 'TEST_UIRename' after closing the sheet. Rename persists across GET /api/buildings and reflects in header (put-buildings test also passes). Reset name to 'Memorial Hall' to leave DB clean. (3) ROOM CHECKLIST (new): opened a room; 5 default checklist items rendered under testIDs check-<uuid>; toggling flipped done state; 'checklist-input' + 'checklist-add' successfully added 'TEST_UI_Item' (visible in list, count=1). Backend endpoints POST/DELETE /rooms/{id}/checklist and POST /rooms/{id}/checklist/toggle all return the updated room and every seeded room already carries a non-empty checklist. (4) TEACHER CALENDAR (bug fix): Ms. Nguyen sees the Calendar tab. Booking calendar in RoomSheet: dates <3 days ahead are locked, tapped cal-2026-08-14 (+3 days) -> room flips to teacher_in (red) -> POST /rooms/{id}/visit returns toggled='added' with room_name populated. Calendar tab shows 1 visit-card-<id> with cancel-visit-<id>; cancel toggles the booking off (0 cards after). (5) PUSH (best-effort): POST /api/register-push exists (returns 500 in preview due to placeholder EMERGENT_PUSH_KEY — expected, not a bug). Chat POST /conversations/{id}/messages still succeeds (200) and message is persisted — push failures are non-blocking as required. (6) REGRESSION: role-based tabs verified — Admin={Floor Plan,Numbers,Contest}, Teacher={Floor Plan,Numbers,Calendar,Contest}, Boss={Floor Plan,Numbers,Chats,Contest}, Cleaner={Floor Plan,Numbers,Chats,Contest}. Cleaner does NOT see manage-building-btn (gear is admin-only). Deprecated packages detected: none. Only carried-over non-blocking RN Web warnings ('shadow*' style props and props.pointerEvents) remain — same as iteration 1 & 2.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Likely in /app/frontend/src/theme.ts (shadow.card / shadow.lg). Migrate for RN Web / RN 0.76+. Non-blocking; carried over from iteration 1 & 2."},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Found in /app/frontend/app/(tabs)/floorplan.tsx line 314 (zoomHint View uses pointerEvents=\"none\" prop). Move into style.pointerEvents. Non-blocking; carried over."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional/LOW - carried over) Migrate shadow.card / shadow.lg in src/theme.ts from shadow* props to boxShadow for RN Web.",
+    "(Optional/LOW - carried over) In floorplan.tsx line 314, move pointerEvents='none' into the style prop."
+  ],
+  "critical_code_review_comments": [
+    "server.py register_push: raises 500 when EMERGENT_PUSH_KEY placeholder returns 401 — the message is 'EMERGENT_PUSH_KEY missing or invalid'. That's fine for preview but I confirmed chat send is truly non-blocking (send_push wrapped in try in _notify_conversation).",
+    "server.py add_visit stores room_name at write time (denormalized). If a room is renamed later, existing visit rows will show the old name. Acceptable trade-off for this app; flag only if product requires live sync.",
+    "make_checklist uses DEFAULT_CHECKLISTS keyed by room type and falls back to 'room' — good.",
+    "PUT /api/buildings/{id} still lacks auth check (matches iteration 1/2 lightweight-auth style, per main-agent context)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (added TestChecklist + TestPush + room_name assertions in TestVisits; 34 -> 41 tests)",
+    "/app/test_reports/pytest/pytest_results.xml (regenerated)",
+    "/app/test_reports/iteration_3.json (created)"
+  ],
+  "success_rate": {"backend": "100% (41/41)", "frontend": "100% of iteration-3 critical flows verified"},
+  "seed_data_creation": "None permanent. Ephemeral TEST_-prefixed rooms/buildings/floors/memos/messages were created and cleaned up in-test. One 'TEST_UI_Item' checklist entry was left on a first-floor Memorial Hall room by the UI test — harmless (users can delete it via check-del-<id>). Building name was renamed to 'TEST_UIRename' during the UI test and then reset to 'Memorial Hall'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend base URL env var: EXPO_PUBLIC_BACKEND_URL. Auth testIDs on /auth: signin-name-input, signin-password-input, signin-submit; roles picker: role-cleaner / role-teacher / role-boss / role-admin. Boss is password-only (Scharf, case-insensitive). Admin password 'gobigred' case-insensitive. Checklist items each rendered as testID check-<itemId>; delete = check-del-<itemId>; input = checklist-input; add = checklist-add. Calendar tab visits = testID visit-card-<visitId> and cancel-visit-<visitId>. Booking calendar dates in RoomSheet = cal-YYYY-MM-DD, dates <3 days ahead disabled. Teacher-only Calendar tab. Cleaner/Boss get Chats. Admin does NOT get Chats. push endpoint /api/register-push returns 500 in preview due to placeholder key — treat as expected. One ephemeral test checklist item ('TEST_UI_Item') exists on a Memorial Hall room; safe to ignore or delete.",
+  "rca_of_issue": "N/A — all 4 requested feature/bug items and the regression sweep pass. Building-rename bug fix confirmed at both the API (PUT /api/buildings/{id} persists) and UI layer (controlled bNameDraft state + Save button correctly calls api.updateBuilding and reloads). Checklist auto-seed + migration confirmed: every seeded room has a non-empty checklist array. Teacher calendar bug fix confirmed: Calendar tab visible for teachers only, +3-day rule enforced, room turns red, cancel round-trips."
+}
