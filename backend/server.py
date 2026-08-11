@@ -917,7 +917,10 @@ async def numbers():
 # ----------------------------- Seed -----------------------------
 
 async def seed():
+    if await db.settings.find_one({"id": "_seeded"}):
+        return
     if await db.users.find_one({}):
+        await db.settings.update_one({"id": "_seeded"}, {"$set": {"done": True}}, upsert=True)
         return
     logger.info("Seeding demo data...")
 
@@ -1009,6 +1012,7 @@ async def seed():
     start = (datetime.now(timezone.utc).date() + timedelta(days=30)).isoformat()
     await db.settings.insert_one({"id": "singleton", "school_start_date": start,
                                   "contest_theme": "This Week's Best Clean"})
+    await db.settings.update_one({"id": "_seeded"}, {"$set": {"done": True}}, upsert=True)
     logger.info("Seed complete.")
 
 
