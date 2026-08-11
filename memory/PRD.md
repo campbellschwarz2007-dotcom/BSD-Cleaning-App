@@ -52,3 +52,9 @@ Multi-role mobile app for a school cleaning crew. Roles: Cleaner, Teacher, Boss,
 - Teacher "Teacher In" calendar: 3-week grid; booking allowed only >= 3 days in advance; booking a day turns the room red (teacher_in); un-booking reverts to untouched when no visits remain.
 - Bug fix: signing out now redirects to the auth/role-picker screen.
 - Verified: backend 34/34 pytest pass; all iteration-2 frontend flows pass.
+
+## Iteration 3 (2026-08-11)
+- Floor plan rebuilt as a pinch-to-zoom / pan / double-tap-to-zoom canvas (react-native-gesture-handler + reanimated) available to every role.
+- Background blueprint is now full-bleed (edge-to-edge), not inside a rounded card.
+- Admin editing is now Canva/Drawings-style: drag a room box to move it and pull its bottom-right corner handle to resize; positions & sizes persist to the backend. Removed the old X/Y/W/H nudge buttons.
+- Verified drag-to-move + resize persist via API; full-bleed render and zoom hint confirmed on device viewport.

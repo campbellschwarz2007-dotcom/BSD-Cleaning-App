@@ -164,12 +164,6 @@ export default function RoomSheet({
     onChanged();
   };
 
-  const nudge = async (field: string, delta: number) => {
-    const value = Math.max(0, (room[field] || 0) + delta);
-    await api.updateRoom(room.id, { [field]: value });
-    onChanged();
-  };
-
   const deleteRoom = async () => {
     await api.deleteRoom(room.id);
     onChanged();
@@ -241,11 +235,11 @@ export default function RoomSheet({
                       </Pressable>
                     ))}
                   </View>
-                  <View style={styles.nudgeGrid}>
-                    <NudgeRow label="Move X" onMinus={() => nudge("x", -8)} onPlus={() => nudge("x", 8)} />
-                    <NudgeRow label="Move Y" onMinus={() => nudge("y", -8)} onPlus={() => nudge("y", 8)} />
-                    <NudgeRow label="Width" onMinus={() => nudge("width", -8)} onPlus={() => nudge("width", 8)} />
-                    <NudgeRow label="Height" onMinus={() => nudge("height", -6)} onPlus={() => nudge("height", 6)} />
+                  <View style={styles.dragHint}>
+                    <Ionicons name="move" size={16} color={colors.brandPrimary} />
+                    <Text style={styles.dragHintText}>
+                      Drag the box on the map to move it, and pull its bottom-right corner to resize.
+                    </Text>
                   </View>
                   <Pressable testID="delete-room" onPress={deleteRoom} style={styles.deleteBtn}>
                     <Ionicons name="trash" size={18} color={colors.error} />
@@ -529,30 +523,6 @@ export default function RoomSheet({
   );
 }
 
-function NudgeRow({
-  label,
-  onMinus,
-  onPlus,
-}: {
-  label: string;
-  onMinus: () => void;
-  onPlus: () => void;
-}) {
-  return (
-    <View style={styles.nudgeRow}>
-      <Text style={styles.nudgeLabel}>{label}</Text>
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <Pressable testID={`nudge-${label}-minus`} onPress={onMinus} style={styles.nudgeBtn}>
-          <Ionicons name="remove" size={18} color={colors.onSurface} />
-        </Pressable>
-        <Pressable testID={`nudge-${label}-plus`} onPress={onPlus} style={styles.nudgeBtn}>
-          <Ionicons name="add" size={18} color={colors.onSurface} />
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, justifyContent: "flex-end" },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
@@ -723,4 +693,14 @@ const styles = StyleSheet.create({
   dayCellBooked: { backgroundColor: colors.info },
   dayCellLocked: { opacity: 0.55 },
   dayNum: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
+  dragHint: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: colors.brandSecondary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  dragHintText: { flex: 1, color: colors.onBrandSecondary, fontSize: 13, lineHeight: 18 },
 });

@@ -6,7 +6,6 @@ import {
   Pressable,
   ScrollView,
   Modal,
-  RefreshControl,
   TextInput,
   Linking,
 } from "react-native";
@@ -19,9 +18,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
 import { pickImageAsDataUri } from "@/src/utils/pickImage";
-import { colors, radius, spacing, statusColor, statusTextColor, shadow } from "@/src/theme";
+import { colors, radius, spacing, statusColor, shadow } from "@/src/theme";
 import { Loading, EmptyState } from "@/src/components/ui";
 import RoomSheet from "@/src/components/RoomSheet";
+import FloorCanvas from "@/src/components/FloorCanvas";
 
 const BLUEPRINT =
   "https://images.unsplash.com/photo-1542621334-a254cf47733d?crop=entropy&cs=srgb&fm=jpg&q=70&w=800";
@@ -42,7 +42,6 @@ export default function FloorPlanScreen() {
   const [selectedFloor, setSelectedFloor] = useState<any>(null);
   const [rooms, setRooms] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [activeRoom, setActiveRoom] = useState<any>(null);
@@ -104,14 +103,9 @@ export default function FloorPlanScreen() {
   );
 
   const refresh = async () => {
-    setRefreshing(true);
-    try {
-      await loadBuildings();
-      if (selected) await loadFloors(selected.id);
-      if (selectedFloor) await loadRooms(selectedFloor.id);
-    } finally {
-      setRefreshing(false);
-    }
+    await loadBuildings();
+    if (selected) await loadFloors(selected.id);
+    if (selectedFloor) await loadRooms(selectedFloor.id);
   };
 
   const onChanged = useCallback(async () => {
@@ -145,6 +139,14 @@ export default function FloorPlanScreen() {
     setActiveRoom(room);
     setSheetOpen(true);
   };
+
+  const saveRoomLayout = useCallback(
+    async (roomId: string, patch: { x: number; y: number; width: number; height: number }) => {
+      await api.updateRoom(roomId, patch);
+      await onChanged();
+    },
+    [onChanged]
+  );
 
   // ---- Admin building & floor management ----
   const renameBuilding = async (name: string) => {
@@ -205,14 +207,7 @@ export default function FloorPlanScreen() {
     if (selected) await loadFloors(selected.id);
   };
 
-  const canvasW = Math.max(
-    340,
-    ...rooms.map((r) => (r.x || 0) + (r.width || 90) + 20)
-  );
-  const canvasH = Math.max(
-    460,
-    ...rooms.map((r) => (r.y || 0) + (r.height || 46) + 20)
-  );
+  const canvasUri = selectedFloor?.blueprint_image || BLUEPRINT;
 
   return (
     <View style={styles.container}>
@@ -244,6 +239,9 @@ export default function FloorPlanScreen() {
               <Ionicons name="settings-outline" size={22} color={colors.onSurface} />
             </Pressable>
           )}
+          <Pressable testID="refresh-btn" onPress={refresh} style={styles.iconBtn}>
+            <Ionicons name="refresh" size={20} color={colors.onSurface} />
+          </Pressable>
           <View style={styles.roleBadge}>
             <Text style={styles.roleBadgeText}>{user?.role}</Text>
           </View>
@@ -300,46 +298,21 @@ export default function FloorPlanScreen() {
       ) : buildings.length === 0 ? (
         <EmptyState icon="business" title="No buildings yet" subtitle="Sign in as Admin to add one." />
       ) : (
-        <ScrollView
-          style={styles.flex}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
-        >
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={[styles.canvas, { width: canvasW, height: canvasH }]}>
-              <Image
-                source={{ uri: selectedFloor?.blueprint_image || BLUEPRINT }}
-                style={StyleSheet.absoluteFill}
-                contentFit="cover"
-              />
-              <View style={styles.canvasTint} />
-              {rooms.map((room) => (
-                <Pressable
-                  key={room.id}
-                  testID={`room-pin-${room.id}`}
-                  onPress={() => openRoom(room)}
-                  style={[
-                    styles.pin,
-                    {
-                      left: room.x,
-                      top: room.y,
-                      width: room.width,
-                      height: room.height,
-                      backgroundColor: statusColor(room.status),
-                    },
-                  ]}
-                >
-                  <Text
-                    numberOfLines={2}
-                    style={[styles.pinText, { color: statusTextColor(room.status) }]}
-                  >
-                    {room.name}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </ScrollView>
-          <View style={{ height: 120 }} />
-        </ScrollView>
+        <View style={styles.flex}>
+          <FloorCanvas
+            rooms={rooms}
+            blueprintUri={canvasUri}
+            editMode={editMode && isAdmin}
+            onOpenRoom={openRoom}
+            onSaveRoom={saveRoomLayout}
+          />
+          <View style={styles.zoomHint} pointerEvents="none">
+            <Ionicons name={editMode && isAdmin ? "move" : "scan"} size={14} color="#fff" />
+            <Text style={styles.zoomHintText}>
+              {editMode && isAdmin ? "Drag to move · pull corner to resize" : "Pinch or double-tap to zoom"}
+            </Text>
+          </View>
+        </View>
       )}
 
       {/* Admin FABs */}
@@ -490,6 +463,19 @@ export default function FloorPlanScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surfaceSecondary },
   flex: { flex: 1 },
+  zoomHint: {
+    position: "absolute",
+    top: spacing.md,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(28,28,30,0.72)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  zoomHintText: { color: "#fff", fontSize: 12, fontWeight: "600" },
   header: {
     flexDirection: "row",
     alignItems: "flex-end",
