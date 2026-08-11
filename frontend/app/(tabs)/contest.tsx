@@ -41,6 +41,7 @@ export default function ContestScreen() {
   const [note, setNote] = useState("");
 
   const canSubmit = user?.role === "cleaner" || user?.role === "boss";
+  const winner = subs.length > 0 && subs[0].vote_count > 0 ? subs[0] : null;
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -179,6 +180,32 @@ export default function ContestScreen() {
           renderItem={renderItem}
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 120 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
+          ListHeaderComponent={
+            winner ? (
+              <LinearGradient
+                colors={["#B01126", colors.brandPrimary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.winnerBanner}
+                testID="winner-banner"
+              >
+                <Image source={{ uri: winner.image }} style={styles.winnerThumb} contentFit="cover" />
+                <View style={{ flex: 1 }}>
+                  <View style={styles.winnerTop}>
+                    <Ionicons name="trophy" size={15} color="#FFD60A" />
+                    <Text style={styles.winnerKicker}>THIS WEEK'S WINNER</Text>
+                  </View>
+                  <Text style={styles.winnerName} numberOfLines={1}>
+                    {winner.user_name}
+                  </Text>
+                  <Text style={styles.winnerVotes}>
+                    {winner.vote_count} {winner.vote_count === 1 ? "vote" : "votes"} · leading the crew
+                  </Text>
+                </View>
+                <Text style={styles.crown}>👑</Text>
+              </LinearGradient>
+            ) : null
+          }
           ListEmptyComponent={
             <EmptyState
               icon="images-outline"
@@ -271,6 +298,21 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 28, fontWeight: "800", color: colors.onSurface },
   subtitle: { fontSize: 14, color: colors.brandPrimary, fontWeight: "600", marginTop: 2 },
+  winnerBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    ...shadow.card,
+  },
+  winnerThumb: { width: 56, height: 56, borderRadius: radius.md, backgroundColor: "rgba(255,255,255,0.2)" },
+  winnerTop: { flexDirection: "row", alignItems: "center", gap: 5 },
+  winnerKicker: { color: "#FFD60A", fontWeight: "800", fontSize: 11, letterSpacing: 0.5 },
+  winnerName: { color: "#fff", fontSize: 18, fontWeight: "800", marginTop: 2 },
+  winnerVotes: { color: "rgba(255,255,255,0.9)", fontSize: 13, marginTop: 1 },
+  crown: { fontSize: 26 },
   post: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,

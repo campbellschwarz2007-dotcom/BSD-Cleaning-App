@@ -38,17 +38,23 @@ export default function NumbersScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [data, setData] = useState<any>(null);
+  const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [dateInput, setDateInput] = useState("");
   const isAdmin = user?.role === "admin";
+  const isBossOrAdmin = user?.role === "boss" || user?.role === "admin";
 
   const load = useCallback(async () => {
     const d = await api.numbers();
     setData(d);
     setDateInput(d.school_start_date ? d.school_start_date.slice(0, 10) : "");
-  }, []);
+    if (user?.role === "boss" || user?.role === "admin") {
+      const s = await api.taskSummary();
+      setSummary(s);
+    }
+  }, [user?.role]);
 
   useFocusEffect(
     useCallback(() => {
@@ -127,6 +133,53 @@ export default function NumbersScreen() {
           </View>
         )}
       </LinearGradient>
+
+      {/* Boss / Admin: Today's Digest */}
+      {isBossOrAdmin && summary && (
+        <View style={styles.card} testID="daily-digest">
+          <View style={styles.cardHead}>
+            <Text style={styles.buildingName}>Today's Digest</Text>
+            <Ionicons name="today" size={22} color={colors.brandPrimary} />
+          </View>
+          <View style={styles.digestRow}>
+            <View style={styles.digestStat}>
+              <Text style={[styles.digestNum, { color: colors.success }]}>
+                {summary.completed_today.length}
+              </Text>
+              <Text style={styles.digestLabel}>Done today</Text>
+            </View>
+            <View style={styles.digestStat}>
+              <Text style={[styles.digestNum, { color: colors.info }]}>
+                {summary.totals.pending}
+              </Text>
+              <Text style={styles.digestLabel}>Pending</Text>
+            </View>
+            <View style={styles.digestStat}>
+              <Text style={[styles.digestNum, { color: colors.warning }]}>
+                {summary.totals.redo}
+              </Text>
+              <Text style={styles.digestLabel}>Redo</Text>
+            </View>
+          </View>
+          <View style={styles.divider} />
+          {summary.completed_today.length === 0 ? (
+            <Text style={styles.overallMeta}>No tasks completed yet today.</Text>
+          ) : (
+            summary.completed_today.map((t: any) => (
+              <View key={t.id} style={styles.digestItem} testID={`digest-item-${t.id}`}>
+                <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.digestTitle}>{t.title}</Text>
+                  <Text style={styles.digestMeta}>
+                    {[t.room_name, t.completed_by_name].filter(Boolean).join(" · ")}
+                    {t.completed_at ? ` · ${dayjs(t.completed_at).format("h:mm A")}` : ""}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+      )}
 
       {/* Per-building progress */}
       <Text style={styles.sectionHeader}>Cleaning progress</Text>
@@ -243,4 +296,17 @@ const styles = StyleSheet.create({
   statLineHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
   statLabel: { fontSize: 14, color: colors.onSurfaceSecondary, fontWeight: "600" },
   statValue: { fontSize: 14, color: colors.muted, fontWeight: "600" },
+  digestRow: { flexDirection: "row", gap: spacing.sm },
+  digestStat: {
+    flex: 1,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+  },
+  digestNum: { fontSize: 26, fontWeight: "800" },
+  digestLabel: { fontSize: 12, color: colors.muted, fontWeight: "600", marginTop: 2 },
+  digestItem: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 6 },
+  digestTitle: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
+  digestMeta: { fontSize: 12, color: colors.muted, marginTop: 1 },
 });

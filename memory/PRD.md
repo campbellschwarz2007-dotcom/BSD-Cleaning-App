@@ -58,3 +58,9 @@ Multi-role mobile app for a school cleaning crew. Roles: Cleaner, Teacher, Boss,
 - Background blueprint is now full-bleed (edge-to-edge), not inside a rounded card.
 - Admin editing is now Canva/Drawings-style: drag a room box to move it and pull its bottom-right corner handle to resize; positions & sizes persist to the backend. Removed the old X/Y/W/H nudge buttons.
 - Verified drag-to-move + resize persist via API; full-bleed render and zoom hint confirmed on device viewport.
+
+## Iteration 4 (2026-08-11)
+- Boss Daily Digest: Numbers page now shows a "Today's Digest" card for Boss/Admin — Done-today / Pending / Redo counts plus a list of every task completed today (room, who, time). Uses /api/tasks/summary.
+- Contest Winner: Contest feed shows a celebratory "This Week's Winner" gradient banner (crown, name, votes, thumbnail) for the top-voted submission — visible to every role.
+- Floor plan panning: fixed so you can freely scroll/pan around the map while zoomed in (clamped to image bounds); removed a gesture-blocking bug that stopped view-mode panning.
+- Added accessible on-screen zoom +/- buttons on the floor plan (in addition to pinch / double-tap) so anyone can zoom without gestures.

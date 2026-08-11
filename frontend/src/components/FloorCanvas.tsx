@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Text, StyleSheet } from "react-native";
+import { Text, StyleSheet, Pressable, View } from "react-native";
 import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -90,7 +91,7 @@ function DraggablePin({
       runOnJS(saveJS)();
     });
 
-  const pinGesture = Gesture.Exclusive(drag, tap);
+  const pinGesture = editMode ? Gesture.Exclusive(drag, tap) : tap;
 
   const pinStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: x.value }, { translateY: y.value }],
@@ -173,6 +174,13 @@ export default function FloorCanvas({
         savedScale.value = 1;
         savedTx.value = 0;
         savedTy.value = 0;
+      } else {
+        const maxX = (size.w * (scale.value - 1)) / 2;
+        const maxY = (size.h * (scale.value - 1)) / 2;
+        tx.value = Math.min(maxX, Math.max(-maxX, tx.value));
+        ty.value = Math.min(maxY, Math.max(-maxY, ty.value));
+        savedTx.value = tx.value;
+        savedTy.value = ty.value;
       }
     });
 
@@ -180,10 +188,12 @@ export default function FloorCanvas({
     .withRef(panRef)
     .averageTouches(true)
     .onUpdate((e) => {
-      if (scale.value > 1) {
-        tx.value = savedTx.value + e.translationX;
-        ty.value = savedTy.value + e.translationY;
-      }
+      const maxX = (size.w * (scale.value - 1)) / 2;
+      const maxY = (size.h * (scale.value - 1)) / 2;
+      const nx = savedTx.value + e.translationX;
+      const ny = savedTy.value + e.translationY;
+      tx.value = Math.min(maxX, Math.max(-maxX, nx));
+      ty.value = Math.min(maxY, Math.max(-maxY, ny));
     })
     .onEnd(() => {
       savedTx.value = tx.value;
@@ -208,6 +218,25 @@ export default function FloorCanvas({
     });
 
   const composed = Gesture.Simultaneous(pinch, pan, doubleTap);
+
+  const zoomBy = (factor: number) => {
+    const next = Math.min(4, Math.max(1, savedScale.value * factor));
+    scale.value = withTiming(next);
+    savedScale.value = next;
+    if (next <= 1) {
+      tx.value = withTiming(0);
+      ty.value = withTiming(0);
+      savedTx.value = 0;
+      savedTy.value = 0;
+    } else {
+      const maxX = (size.w * (next - 1)) / 2;
+      const maxY = (size.h * (next - 1)) / 2;
+      tx.value = Math.min(maxX, Math.max(-maxX, tx.value));
+      ty.value = Math.min(maxY, Math.max(-maxY, ty.value));
+      savedTx.value = tx.value;
+      savedTy.value = ty.value;
+    }
+  };
 
   const contentStyle = useAnimatedStyle(() => ({
     transform: [
@@ -243,6 +272,15 @@ export default function FloorCanvas({
               />
             ))}
         </Animated.View>
+
+        <View style={styles.zoomControls} pointerEvents="box-none">
+          <Pressable testID="zoom-in-btn" onPress={() => zoomBy(1.5)} style={styles.zoomBtn}>
+            <Ionicons name="add" size={22} color={colors.onSurface} />
+          </Pressable>
+          <Pressable testID="zoom-out-btn" onPress={() => zoomBy(1 / 1.5)} style={styles.zoomBtn}>
+            <Ionicons name="remove" size={22} color={colors.onSurface} />
+          </Pressable>
+        </View>
       </Animated.View>
     </GestureDetector>
   );
@@ -276,6 +314,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderWidth: 2,
     borderColor: colors.brandPrimary,
+    ...shadow.card,
+  },
+  zoomControls: { position: "absolute", left: 16, bottom: 16, gap: 8 },
+  zoomBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    alignItems: "center",
+    justifyContent: "center",
     ...shadow.card,
   },
 });
