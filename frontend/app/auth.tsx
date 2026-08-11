@@ -61,10 +61,7 @@ export default function AuthScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const body: any = { role };
       if (role === "cleaner" || role === "teacher") body.name = name;
-      if (role === "boss") {
-        body.name = name;
-        body.password = password;
-      }
+      if (role === "boss") body.password = password;
       if (role === "admin") body.password = password;
       const user = await api.signin(body);
       await signIn(user);
@@ -77,7 +74,7 @@ export default function AuthScreen() {
     }
   };
 
-  const needsName = role === "cleaner" || role === "teacher" || role === "boss";
+  const needsName = role === "cleaner" || role === "teacher";
   const needsPassword = role === "boss" || role === "admin";
   const canSubmit =
     (!needsName || name.trim().length > 0) &&
@@ -164,7 +161,7 @@ export default function AuthScreen() {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
-                autoFocus={role === "admin"}
+                autoFocus={role === "admin" || role === "boss"}
                 returnKeyType="done"
                 onSubmitEditing={canSubmit ? submit : undefined}
               />

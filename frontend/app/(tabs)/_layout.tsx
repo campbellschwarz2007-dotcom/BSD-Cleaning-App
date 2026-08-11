@@ -1,5 +1,5 @@
-import React from "react";
-import { Tabs } from "expo-router";
+import React, { useEffect } from "react";
+import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Platform } from "react-native";
 import { useAuth } from "@/src/context/AuthContext";
@@ -7,7 +7,12 @@ import { colors } from "@/src/theme";
 
 export default function TabsLayout() {
   const { user } = useAuth();
+  const router = useRouter();
   const role = user?.role;
+
+  useEffect(() => {
+    if (!user) router.replace("/auth");
+  }, [user]);
 
   const show = {
     floorplan: true,

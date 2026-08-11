@@ -52,8 +52,22 @@ export const api = {
     request(`/buildings/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteBuilding: (id: string) => request(`/buildings/${id}`, { method: "DELETE" }),
 
-  rooms: (buildingId?: string) =>
-    request(`/rooms${buildingId ? `?building_id=${buildingId}` : ""}`),
+  // floors
+  floors: (buildingId?: string) =>
+    request(`/floors${buildingId ? `?building_id=${buildingId}` : ""}`),
+  createFloor: (body: { building_id: string; name: string; blueprint_image?: string }) =>
+    request("/floors", { method: "POST", body: JSON.stringify(body) }),
+  updateFloor: (id: string, body: { name?: string; blueprint_image?: string }) =>
+    request(`/floors/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteFloor: (id: string) => request(`/floors/${id}`, { method: "DELETE" }),
+
+  rooms: (params: { buildingId?: string; floorId?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (params.buildingId) q.set("building_id", params.buildingId);
+    if (params.floorId) q.set("floor_id", params.floorId);
+    const qs = q.toString();
+    return request(`/rooms${qs ? `?${qs}` : ""}`);
+  },
   createRoom: (body: any) =>
     request("/rooms", { method: "POST", body: JSON.stringify(body) }),
   updateRoom: (id: string, body: any) =>

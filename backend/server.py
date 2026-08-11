@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 ADMIN_PASSWORD = "gobigred"
+BOSS_PASSWORD = "scharf"
 
 # ----------------------------- Helpers -----------------------------
 
@@ -62,8 +63,20 @@ class Building(BaseModel):
     blueprint_image: Optional[str] = None
 
 
+class FloorInput(BaseModel):
+    building_id: str
+    name: str
+    blueprint_image: Optional[str] = None
+
+
+class FloorUpdate(BaseModel):
+    name: Optional[str] = None
+    blueprint_image: Optional[str] = None
+
+
 class RoomInput(BaseModel):
     building_id: str
+    floor_id: Optional[str] = None
     name: str
     type: str = "room"
     x: float = 50
@@ -143,13 +156,15 @@ async def signin(inp: SignInInput):
         return clean(user)
 
     if role == "boss":
-        if not inp.name or not inp.password:
-            raise HTTPException(status_code=400, detail="Name and password required")
-        user = await db.users.find_one({"role": "boss", "name": inp.name.strip()})
-        if not user:
-            raise HTTPException(status_code=401, detail="No boss found with that name")
-        if user.get("password") != inp.password:
+        if not inp.password or inp.password.strip().lower() != BOSS_PASSWORD:
             raise HTTPException(status_code=401, detail="Incorrect password")
+        user = await db.users.find_one({"role": "boss"})
+        if not user:
+            user = {"id": new_id(), "name": "Boss", "role": "boss",
+                    "password": None, "created_at": now_iso()}
+            await db.users.insert_one(dict(user))
+            await db.conversations.update_one(
+                {"type": "all"}, {"$addToSet": {"participants": user["id"]}})
         return clean(user)
 
     if role in ("cleaner", "teacher"):
@@ -216,17 +231,57 @@ async def update_building(building_id: str, inp: Building):
 @api_router.delete("/buildings/{building_id}")
 async def delete_building(building_id: str):
     await db.buildings.delete_one({"id": building_id})
+    await db.floors.delete_many({"building_id": building_id})
     await db.rooms.delete_many({"building_id": building_id})
+    return {"deleted": True}
+
+
+# ----------------------------- Floors -----------------------------
+
+@api_router.get("/floors")
+async def list_floors(building_id: Optional[str] = None):
+    q = {}
+    if building_id:
+        q["building_id"] = building_id
+    items = await db.floors.find(q).sort("created_at", 1).to_list(200)
+    return [clean(f) for f in items]
+
+
+@api_router.post("/floors")
+async def create_floor(inp: FloorInput):
+    doc = {"id": new_id(), "building_id": inp.building_id, "name": inp.name,
+           "blueprint_image": inp.blueprint_image, "created_at": now_iso()}
+    await db.floors.insert_one(dict(doc))
+    return clean(doc)
+
+
+@api_router.put("/floors/{floor_id}")
+async def update_floor(floor_id: str, inp: FloorUpdate):
+    update = {k: v for k, v in inp.dict().items() if v is not None}
+    if update:
+        await db.floors.update_one({"id": floor_id}, {"$set": update})
+    f = await db.floors.find_one({"id": floor_id})
+    if not f:
+        raise HTTPException(404, "Floor not found")
+    return clean(f)
+
+
+@api_router.delete("/floors/{floor_id}")
+async def delete_floor(floor_id: str):
+    await db.floors.delete_one({"id": floor_id})
+    await db.rooms.delete_many({"floor_id": floor_id})
     return {"deleted": True}
 
 
 # ----------------------------- Rooms -----------------------------
 
 @api_router.get("/rooms")
-async def list_rooms(building_id: Optional[str] = None):
+async def list_rooms(building_id: Optional[str] = None, floor_id: Optional[str] = None):
     q = {}
     if building_id:
         q["building_id"] = building_id
+    if floor_id:
+        q["floor_id"] = floor_id
     items = await db.rooms.find(q).to_list(1000)
     return [clean(r) for r in items]
 
@@ -350,18 +405,23 @@ async def add_visit(room_id: str, inp: VisitInput,
         raise HTTPException(400, "Invalid date")
     today = datetime.now(timezone.utc).date()
     delta = (visit_date - today).days
-    if delta < 0:
-        raise HTTPException(400, "Cannot mark a past day")
-    if delta > 3:
-        raise HTTPException(400, "You can only mark days up to 3 days in advance")
+    if delta < 3:
+        raise HTTPException(400, "Teachers must book a room at least 3 days in advance")
     existing = await db.visits.find_one(
         {"room_id": room_id, "teacher_id": actor["id"], "date": inp.date})
     if existing:
         await db.visits.delete_one({"id": existing["id"]})
+        remaining = await db.visits.find_one({"room_id": room_id})
+        if not remaining:
+            room = await db.rooms.find_one({"id": room_id})
+            if room and room.get("status") == "teacher_in":
+                await db.rooms.update_one({"id": room_id}, {"$set": {"status": "untouched"}})
         return {"toggled": "removed"}
     doc = {"id": new_id(), "room_id": room_id, "teacher_id": actor["id"],
            "teacher_name": actor["name"], "date": inp.date, "created_at": now_iso()}
     await db.visits.insert_one(dict(doc))
+    # marking a room turns it red ("teacher in")
+    await db.rooms.update_one({"id": room_id}, {"$set": {"status": "teacher_in"}})
     return {"toggled": "added", **clean(doc)}
 
 
@@ -688,7 +748,7 @@ async def seed():
     logger.info("Seeding demo data...")
 
     boss = {"id": new_id(), "name": "Coach Riley", "role": "boss",
-            "password": "boss123", "created_at": now_iso()}
+            "password": "Scharf", "created_at": now_iso()}
     cleaner_names = ["Sam Carter", "Jordan Lee", "Alex Kim"]
     cleaners = [{"id": new_id(), "name": n, "role": "cleaner",
                  "password": None, "created_at": now_iso()} for n in cleaner_names]
@@ -702,26 +762,34 @@ async def seed():
           "blueprint_image": None, "created_at": now_iso()}
     await db.buildings.insert_many([b1, b2])
 
-    def mk_room(bid, name, typ, x, y, w, h, status):
-        return {"id": new_id(), "building_id": bid, "name": name, "type": typ,
-                "x": x, "y": y, "width": w, "height": h, "status": status,
-                "photos": [], "created_at": now_iso()}
+    f1a = {"id": new_id(), "building_id": b1["id"], "name": "1st Floor",
+           "blueprint_image": None, "created_at": now_iso()}
+    f1b = {"id": new_id(), "building_id": b1["id"], "name": "2nd Floor",
+           "blueprint_image": None, "created_at": now_iso()}
+    f2a = {"id": new_id(), "building_id": b2["id"], "name": "Ground Floor",
+           "blueprint_image": None, "created_at": now_iso()}
+    await db.floors.insert_many([f1a, f1b, f2a])
+
+    def mk_room(bid, fid, name, typ, x, y, w, h, status):
+        return {"id": new_id(), "building_id": bid, "floor_id": fid, "name": name,
+                "type": typ, "x": x, "y": y, "width": w, "height": h,
+                "status": status, "photos": [], "created_at": now_iso()}
 
     rooms_b1 = [
-        mk_room(b1["id"], "Room 101", "room", 8, 12, 90, 46, "completed"),
-        mk_room(b1["id"], "Room 102", "room", 8, 66, 90, 46, "in_progress"),
-        mk_room(b1["id"], "Room 103", "room", 8, 120, 90, 46, "untouched"),
-        mk_room(b1["id"], "Room 104", "room", 62, 12, 90, 46, "teacher_in"),
-        mk_room(b1["id"], "Room 105", "room", 62, 66, 90, 46, "untouched"),
-        mk_room(b1["id"], "North Stairs", "stairs", 62, 120, 90, 46, "untouched"),
-        mk_room(b1["id"], "Main Hallway", "hallway", 8, 180, 144, 40, "in_progress"),
-        mk_room(b1["id"], "Front Entry", "entryway", 8, 234, 90, 44, "completed"),
+        mk_room(b1["id"], f1a["id"], "Room 101", "room", 8, 12, 90, 46, "completed"),
+        mk_room(b1["id"], f1a["id"], "Room 102", "room", 8, 66, 90, 46, "in_progress"),
+        mk_room(b1["id"], f1a["id"], "Room 103", "room", 8, 120, 90, 46, "untouched"),
+        mk_room(b1["id"], f1a["id"], "North Stairs", "stairs", 62, 120, 90, 46, "untouched"),
+        mk_room(b1["id"], f1a["id"], "Main Hallway", "hallway", 8, 180, 144, 40, "in_progress"),
+        mk_room(b1["id"], f1a["id"], "Front Entry", "entryway", 8, 234, 90, 44, "completed"),
+        mk_room(b1["id"], f1b["id"], "Room 201", "room", 8, 12, 90, 46, "teacher_in"),
+        mk_room(b1["id"], f1b["id"], "Room 202", "room", 62, 12, 90, 46, "untouched"),
     ]
     rooms_b2 = [
-        mk_room(b2["id"], "Lab A", "room", 8, 12, 90, 46, "untouched"),
-        mk_room(b2["id"], "Lab B", "room", 62, 12, 90, 46, "completed"),
-        mk_room(b2["id"], "West Stairs", "stairs", 8, 66, 90, 46, "untouched"),
-        mk_room(b2["id"], "Atrium", "entryway", 62, 66, 90, 46, "in_progress"),
+        mk_room(b2["id"], f2a["id"], "Lab A", "room", 8, 12, 90, 46, "untouched"),
+        mk_room(b2["id"], f2a["id"], "Lab B", "room", 62, 12, 90, 46, "completed"),
+        mk_room(b2["id"], f2a["id"], "West Stairs", "stairs", 8, 66, 90, 46, "untouched"),
+        mk_room(b2["id"], f2a["id"], "Atrium", "entryway", 62, 66, 90, 46, "in_progress"),
     ]
     await db.rooms.insert_many(rooms_b1 + rooms_b2)
 
@@ -747,7 +815,7 @@ async def seed():
          "completed_by": cleaners[0]["id"], "completed_by_name": cleaners[0]["name"],
          "completed_at": now_iso(), "created_at": now_iso()},
         {"id": new_id(), "title": "Mop Main Hallway", "description": "",
-         "room_id": rooms_b1[6]["id"], "room_name": "Main Hallway",
+         "room_id": rooms_b1[4]["id"], "room_name": "Main Hallway",
          "assigned_to": [cleaners[1]["id"]], "created_by": boss["id"],
          "created_by_name": boss["name"], "status": "pending",
          "completed_by": None, "completed_by_name": None,
@@ -770,9 +838,27 @@ async def seed():
     logger.info("Seed complete.")
 
 
+async def migrate_floors():
+    """Ensure every building has at least one floor and every room a floor_id."""
+    buildings = await db.buildings.find().to_list(200)
+    for b in buildings:
+        floor = await db.floors.find_one({"building_id": b["id"]})
+        if not floor:
+            floor = {"id": new_id(), "building_id": b["id"], "name": "1st Floor",
+                     "blueprint_image": b.get("blueprint_image"), "created_at": now_iso()}
+            await db.floors.insert_one(dict(floor))
+        await db.rooms.update_many(
+            {"building_id": b["id"], "floor_id": {"$in": [None, ""]}},
+            {"$set": {"floor_id": floor["id"]}})
+        await db.rooms.update_many(
+            {"building_id": b["id"], "floor_id": {"$exists": False}},
+            {"$set": {"floor_id": floor["id"]}})
+
+
 @app.on_event("startup")
 async def on_startup():
     await seed()
+    await migrate_floors()
 
 
 @api_router.get("/")

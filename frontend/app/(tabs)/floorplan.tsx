@@ -7,6 +7,8 @@ import {
   ScrollView,
   Modal,
   RefreshControl,
+  TextInput,
+  Linking,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
 import { useAuth } from "@/src/context/AuthContext";
+import { pickImageAsDataUri } from "@/src/utils/pickImage";
 import { colors, radius, spacing, statusColor, statusTextColor, shadow } from "@/src/theme";
 import { Loading, EmptyState } from "@/src/components/ui";
 import RoomSheet from "@/src/components/RoomSheet";
@@ -35,25 +38,36 @@ export default function FloorPlanScreen() {
   const { user, signOut } = useAuth();
   const [buildings, setBuildings] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
+  const [floors, setFloors] = useState<any[]>([]);
+  const [selectedFloor, setSelectedFloor] = useState<any>(null);
   const [rooms, setRooms] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [activeRoom, setActiveRoom] = useState<any>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [note, setNote] = useState("");
 
   const isAdmin = user?.role === "admin";
 
   const loadBuildings = useCallback(async () => {
     const b = await api.buildings();
     setBuildings(b);
-    setSelected((cur: any) => cur || b[0] || null);
+    setSelected((cur: any) => (cur && b.find((x: any) => x.id === cur.id)) || b[0] || null);
     return b;
   }, []);
 
-  const loadRooms = useCallback(async (buildingId: string) => {
-    const r = await api.rooms(buildingId);
+  const loadFloors = useCallback(async (buildingId: string) => {
+    const f = await api.floors(buildingId);
+    setFloors(f);
+    setSelectedFloor((cur: any) => (cur && f.find((x: any) => x.id === cur.id)) || f[0] || null);
+    return f;
+  }, []);
+
+  const loadRooms = useCallback(async (floorId: string) => {
+    const r = await api.rooms({ floorId });
     setRooms(r);
   }, []);
 
@@ -61,8 +75,11 @@ export default function FloorPlanScreen() {
     setLoading(true);
     try {
       const b = await loadBuildings();
-      const first = selected || b[0];
-      if (first) await loadRooms(first.id);
+      const first = b[0];
+      if (first) {
+        const f = await loadFloors(first.id);
+        if (f[0]) await loadRooms(f[0].id);
+      }
     } finally {
       setLoading(false);
     }
@@ -72,33 +89,38 @@ export default function FloorPlanScreen() {
     init();
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (selected) loadRooms(selected.id);
-    }, [selected?.id])
-  );
+  useEffect(() => {
+    if (selected) loadFloors(selected.id);
+  }, [selected?.id]);
 
   useEffect(() => {
-    if (selected) loadRooms(selected.id);
-  }, [selected?.id]);
+    if (selectedFloor) loadRooms(selectedFloor.id);
+  }, [selectedFloor?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedFloor) loadRooms(selectedFloor.id);
+    }, [selectedFloor?.id])
+  );
 
   const refresh = async () => {
     setRefreshing(true);
     try {
       await loadBuildings();
-      if (selected) await loadRooms(selected.id);
+      if (selected) await loadFloors(selected.id);
+      if (selectedFloor) await loadRooms(selectedFloor.id);
     } finally {
       setRefreshing(false);
     }
   };
 
   const onChanged = useCallback(async () => {
-    if (selected) {
-      const r = await api.rooms(selected.id);
+    if (selectedFloor) {
+      const r = await api.rooms({ floorId: selectedFloor.id });
       setRooms(r);
       setActiveRoom((cur: any) => (cur ? r.find((x: any) => x.id === cur.id) || cur : cur));
     }
-  }, [selected?.id]);
+  }, [selectedFloor?.id]);
 
   const openRoom = (room: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -107,9 +129,10 @@ export default function FloorPlanScreen() {
   };
 
   const addRoom = async () => {
-    if (!selected) return;
+    if (!selected || !selectedFloor) return;
     const room = await api.createRoom({
       building_id: selected.id,
+      floor_id: selectedFloor.id,
       name: "New Room",
       type: "room",
       x: 20,
@@ -121,6 +144,65 @@ export default function FloorPlanScreen() {
     await onChanged();
     setActiveRoom(room);
     setSheetOpen(true);
+  };
+
+  // ---- Admin building & floor management ----
+  const renameBuilding = async (name: string) => {
+    if (!selected || !name.trim()) return;
+    await api.updateBuilding(selected.id, { name: name.trim() });
+    await loadBuildings();
+  };
+  const addBuilding = async () => {
+    const b = await api.createBuilding({ name: "New Building" });
+    await api.createFloor({ building_id: b.id, name: "1st Floor" });
+    await loadBuildings();
+    setSelected(b);
+  };
+  const deleteBuilding = async () => {
+    if (!selected || buildings.length <= 1) {
+      setNote("Keep at least one building.");
+      return;
+    }
+    await api.deleteBuilding(selected.id);
+    const b = await loadBuildings();
+    setSelected(b[0] || null);
+  };
+  const addFloor = async () => {
+    if (!selected) return;
+    const f = await api.createFloor({
+      building_id: selected.id,
+      name: `Floor ${floors.length + 1}`,
+    });
+    await loadFloors(selected.id);
+    setSelectedFloor(f);
+  };
+  const renameFloor = async (floorId: string, name: string) => {
+    if (!name.trim()) return;
+    await api.updateFloor(floorId, { name: name.trim() });
+    if (selected) await loadFloors(selected.id);
+  };
+  const deleteFloor = async (floorId: string) => {
+    if (floors.length <= 1) {
+      setNote("Keep at least one floor.");
+      return;
+    }
+    await api.deleteFloor(floorId);
+    if (selected) {
+      const f = await loadFloors(selected.id);
+      setSelectedFloor(f[0] || null);
+    }
+  };
+  const uploadBlueprint = async () => {
+    if (!selectedFloor) return;
+    const res = await pickImageAsDataUri();
+    if (!res) return;
+    if ("error" in res) {
+      setNote(res.error === "settings" ? "Photo access blocked. Open Settings." : "Couldn't access photos.");
+      return;
+    }
+    setNote("");
+    await api.updateFloor(selectedFloor.id, { blueprint_image: res.dataUri });
+    if (selected) await loadFloors(selected.id);
   };
 
   const canvasW = Math.max(
@@ -150,6 +232,18 @@ export default function FloorPlanScreen() {
           </Pressable>
         </View>
         <View style={styles.headerRight}>
+          {isAdmin && (
+            <Pressable
+              testID="manage-building-btn"
+              onPress={() => {
+                setNote("");
+                setManageOpen(true);
+              }}
+              style={styles.iconBtn}
+            >
+              <Ionicons name="settings-outline" size={22} color={colors.onSurface} />
+            </Pressable>
+          )}
           <View style={styles.roleBadge}>
             <Text style={styles.roleBadgeText}>{user?.role}</Text>
           </View>
@@ -158,6 +252,38 @@ export default function FloorPlanScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* Floor selector */}
+      {floors.length > 0 && (
+        <View style={styles.floorBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.floorRow}
+          >
+            {floors.map((f) => {
+              const on = selectedFloor?.id === f.id;
+              return (
+                <Pressable
+                  key={f.id}
+                  testID={`floor-${f.id}`}
+                  onPress={() => setSelectedFloor(f)}
+                  style={[styles.floorChip, on && styles.floorChipActive]}
+                >
+                  <Text style={[styles.floorChipText, on && styles.floorChipTextActive]}>
+                    {f.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            {isAdmin && (
+              <Pressable testID="add-floor-chip" onPress={addFloor} style={styles.floorAdd}>
+                <Ionicons name="add" size={18} color={colors.brandPrimary} />
+              </Pressable>
+            )}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Legend */}
       <View style={styles.legend}>
@@ -180,7 +306,11 @@ export default function FloorPlanScreen() {
         >
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={[styles.canvas, { width: canvasW, height: canvasH }]}>
-              <Image source={{ uri: BLUEPRINT }} style={StyleSheet.absoluteFill} contentFit="cover" />
+              <Image
+                source={{ uri: selectedFloor?.blueprint_image || BLUEPRINT }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+              />
               <View style={styles.canvasTint} />
               {rooms.map((room) => (
                 <Pressable
@@ -258,6 +388,89 @@ export default function FloorPlanScreen() {
             ))}
           </View>
         </Pressable>
+      </Modal>
+
+      {/* Admin: manage building & floors */}
+      <Modal visible={manageOpen} transparent animationType="slide" onRequestClose={() => setManageOpen(false)}>
+        <View style={styles.manageRoot}>
+          <Pressable style={styles.pickerBackdropFull} onPress={() => setManageOpen(false)} />
+          <View style={[styles.manageSheet, { paddingBottom: insets.bottom + spacing.xl }]}>
+            <View style={styles.handle} />
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={styles.manageTitle}>Manage building</Text>
+
+              <Text style={styles.manageLabel}>Building name</Text>
+              <TextInput
+                testID="building-name-input"
+                style={styles.manageInput}
+                defaultValue={selected?.name}
+                key={selected?.id}
+                onEndEditing={(e) => renameBuilding(e.nativeEvent.text)}
+              />
+              <View style={styles.manageRow}>
+                <Pressable testID="add-building-btn" onPress={addBuilding} style={styles.manageBtnGhost}>
+                  <Ionicons name="add" size={18} color={colors.brandPrimary} />
+                  <Text style={styles.manageBtnGhostText}>Add building</Text>
+                </Pressable>
+                <Pressable testID="delete-building-btn" onPress={deleteBuilding} style={styles.manageBtnDanger}>
+                  <Ionicons name="trash" size={16} color={colors.error} />
+                  <Text style={styles.manageBtnDangerText}>Delete</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.manageDivider} />
+
+              <Text style={styles.manageLabel}>Blueprint for {selectedFloor?.name || "floor"}</Text>
+              <Pressable testID="upload-blueprint-btn" onPress={uploadBlueprint} style={styles.blueprintBtn}>
+                {selectedFloor?.blueprint_image ? (
+                  <Image source={{ uri: selectedFloor.blueprint_image }} style={styles.blueprintPreview} contentFit="cover" />
+                ) : (
+                  <View style={styles.blueprintPlaceholder}>
+                    <Ionicons name="cloud-upload-outline" size={30} color={colors.muted} />
+                    <Text style={styles.blueprintText}>Upload a blueprint photo</Text>
+                  </View>
+                )}
+              </Pressable>
+
+              <View style={styles.manageDivider} />
+
+              <View style={styles.rowBetweenManage}>
+                <Text style={styles.manageLabel}>Floors</Text>
+                <Pressable testID="manage-add-floor-btn" onPress={addFloor} style={styles.manageBtnGhost}>
+                  <Ionicons name="add" size={18} color={colors.brandPrimary} />
+                  <Text style={styles.manageBtnGhostText}>Add floor</Text>
+                </Pressable>
+              </View>
+              {floors.map((f) => (
+                <View key={f.id} style={styles.floorManageRow}>
+                  <TextInput
+                    testID={`floor-name-input-${f.id}`}
+                    style={[styles.manageInput, { flex: 1, marginBottom: 0 }]}
+                    defaultValue={f.name}
+                    onEndEditing={(e) => renameFloor(f.id, e.nativeEvent.text)}
+                  />
+                  <Pressable
+                    testID={`delete-floor-${f.id}`}
+                    onPress={() => deleteFloor(f.id)}
+                    style={styles.floorDeleteBtn}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={colors.error} />
+                  </Pressable>
+                </View>
+              ))}
+
+              {note ? (
+                <Pressable onPress={() => Linking.openSettings()}>
+                  <Text style={styles.manageNote}>{note}</Text>
+                </Pressable>
+              ) : null}
+
+              <Pressable testID="manage-done-btn" onPress={() => setManageOpen(false)} style={styles.manageDone}>
+                <Text style={styles.manageDoneText}>Done</Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
 
       {user && (
@@ -351,4 +564,109 @@ const styles = StyleSheet.create({
   pickerTitle: { fontSize: 13, fontWeight: "700", color: colors.muted, textTransform: "uppercase", padding: spacing.sm },
   pickerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
   pickerRowText: { fontSize: 16, color: colors.onSurface, fontWeight: "600" },
+  floorBar: {
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  floorRow: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, gap: spacing.sm, alignItems: "center" },
+  floorChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+    flexShrink: 0,
+  },
+  floorChipActive: { backgroundColor: colors.onSurface },
+  floorChipText: { fontSize: 14, fontWeight: "600", color: colors.onSurfaceSecondary },
+  floorChipTextActive: { color: "#fff" },
+  floorAdd: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.brandSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  handle: {
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.borderStrong,
+    alignSelf: "center",
+    marginBottom: spacing.md,
+  },
+  manageRoot: { flex: 1, justifyContent: "flex-end" },
+  pickerBackdropFull: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
+  manageSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    maxHeight: "88%",
+  },
+  manageTitle: { fontSize: 22, fontWeight: "800", color: colors.onSurface, marginBottom: spacing.md },
+  manageLabel: { fontSize: 13, color: colors.muted, fontWeight: "700", marginBottom: 6, textTransform: "uppercase" },
+  manageInput: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: colors.onSurface,
+    marginBottom: spacing.md,
+  },
+  manageRow: { flexDirection: "row", gap: spacing.sm },
+  rowBetweenManage: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  manageBtnGhost: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandSecondary,
+  },
+  manageBtnGhostText: { color: colors.brandPrimary, fontWeight: "700", fontSize: 14 },
+  manageBtnDanger: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  manageBtnDangerText: { color: colors.error, fontWeight: "700", fontSize: 14 },
+  manageDivider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.lg },
+  blueprintBtn: {
+    width: "100%",
+    aspectRatio: 1.6,
+    borderRadius: radius.md,
+    overflow: "hidden",
+    backgroundColor: colors.surfaceSecondary,
+  },
+  blueprintPreview: { width: "100%", height: "100%" },
+  blueprintPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm },
+  blueprintText: { color: colors.muted, fontSize: 15 },
+  floorManageRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.sm },
+  floorDeleteBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  manageNote: { color: colors.error, textAlign: "center", marginTop: spacing.sm },
+  manageDone: {
+    backgroundColor: colors.brandPrimary,
+    borderRadius: radius.md,
+    paddingVertical: 15,
+    alignItems: "center",
+    marginTop: spacing.lg,
+  },
+  manageDoneText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 });

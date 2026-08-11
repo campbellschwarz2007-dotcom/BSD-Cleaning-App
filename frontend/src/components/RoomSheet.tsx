@@ -177,8 +177,12 @@ export default function RoomSheet({
   };
 
   const canAddPhoto = role === "cleaner" || role === "boss" || role === "admin";
-  const visitDates = [0, 1, 2, 3].map((d) => dayjs().add(d, "day"));
   const myVisits = visits.filter((v) => v.teacher_id === user.id).map((v) => v.date);
+  const allVisitDates = new Set(visits.map((v) => v.date));
+  const todayD = dayjs().startOf("day");
+  const gridStart = todayD.startOf("week");
+  const calendarCells = Array.from({ length: 21 }, (_, i) => gridStart.add(i, "day"));
+  const weekdayLabels = ["S", "M", "T", "W", "T", "F", "S"];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -351,39 +355,72 @@ export default function RoomSheet({
                 </View>
               )}
 
-              {/* TEACHER VISITS */}
-              {!editMode && (
+              {/* TEACHER VISITS CALENDAR */}
+              {!editMode && !isStructure && (
                 <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Teacher coming in</Text>
-                  {role === "teacher" ? (
-                    <View style={styles.chipRow}>
-                      {visitDates.map((d) => {
-                        const ds = d.format("YYYY-MM-DD");
-                        const on = myVisits.includes(ds);
-                        return (
-                          <Pressable
-                            key={ds}
-                            testID={`visit-${ds}`}
-                            onPress={() => toggleVisit(ds)}
-                            style={[styles.chip, on && styles.chipActive]}
-                          >
-                            <Text style={[styles.chipText, on && styles.chipTextActive]}>
-                              {d.format("ddd D")}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  ) : visits.length ? (
-                    visits.map((v) => (
-                      <Text key={v.id} style={styles.memoText}>
-                        {v.teacher_name} · {dayjs(v.date).format("ddd, MMM D")}
+                  <Text style={styles.sectionTitle}>
+                    {role === "teacher" ? "Book this room (Teacher In)" : "Teacher coming in"}
+                  </Text>
+
+                  <View style={styles.weekHeader}>
+                    {weekdayLabels.map((w, i) => (
+                      <Text key={i} style={styles.weekdayLabel}>
+                        {w}
                       </Text>
-                    ))
+                    ))}
+                  </View>
+                  <View style={styles.calendarGrid}>
+                    {calendarCells.map((d) => {
+                      const ds = d.format("YYYY-MM-DD");
+                      const diff = d.startOf("day").diff(todayD, "day");
+                      const bookableByMe = role === "teacher" && diff >= 3;
+                      const mine = myVisits.includes(ds);
+                      const booked = allVisitDates.has(ds);
+                      const isToday = diff === 0;
+                      const locked = role === "teacher" && diff < 3;
+                      return (
+                        <Pressable
+                          key={ds}
+                          testID={`cal-${ds}`}
+                          disabled={!bookableByMe}
+                          onPress={() => bookableByMe && toggleVisit(ds)}
+                          style={[
+                            styles.dayCell,
+                            mine && styles.dayCellMine,
+                            !mine && booked && styles.dayCellBooked,
+                            locked && styles.dayCellLocked,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dayNum,
+                              (mine || (booked && !mine)) && { color: "#fff" },
+                              locked && { color: colors.borderStrong },
+                              isToday && !mine && !booked && { color: colors.brandPrimary, fontWeight: "800" },
+                            ]}
+                          >
+                            {d.date()}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {role === "teacher" ? (
+                    <Text style={styles.hint}>
+                      You can only book a room at least 3 days in advance. Booking turns the room red.
+                    </Text>
+                  ) : visits.length ? (
+                    <View style={{ marginTop: spacing.sm }}>
+                      {visits.map((v) => (
+                        <Text key={v.id} style={styles.memoText}>
+                          {v.teacher_name} · {dayjs(v.date).format("ddd, MMM D")}
+                        </Text>
+                      ))}
+                    </View>
                   ) : (
                     <Text style={styles.muted}>No visits scheduled.</Text>
                   )}
-                  <Text style={styles.hint}>Teachers can mark up to 3 days ahead.</Text>
                 </View>
               )}
 
@@ -666,4 +703,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  weekHeader: { flexDirection: "row", marginBottom: 4 },
+  weekdayLabel: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.muted,
+  },
+  calendarGrid: { flexDirection: "row", flexWrap: "wrap" },
+  dayCell: {
+    width: `${100 / 7}%`,
+    aspectRatio: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.md,
+  },
+  dayCellMine: { backgroundColor: colors.status_teacher_in },
+  dayCellBooked: { backgroundColor: colors.info },
+  dayCellLocked: { opacity: 0.55 },
+  dayNum: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
 });

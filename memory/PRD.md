@@ -44,3 +44,11 @@ Multi-role mobile app for a school cleaning crew. Roles: Cleaner, Teacher, Boss,
 
 ## Next Tasks
 - Await user feedback; wire up S3 if keys shared; build boss daily-summary screen.
+
+## Iteration 2 (2026-08-11)
+- Boss now signs in with password only ("Scharf", case-insensitive) — no name required.
+- Floors: each building has multiple floors; floor plan scoped by building + floor. New /api/floors CRUD; rooms carry floor_id; migration backfills existing data.
+- Admin "Manage building" sheet: rename/add/delete building, add/rename/delete floors, upload a blueprint photo per floor (shown behind the room pins).
+- Teacher "Teacher In" calendar: 3-week grid; booking allowed only >= 3 days in advance; booking a day turns the room red (teacher_in); un-booking reverts to untouched when no visits remain.
+- Bug fix: signing out now redirects to the auth/role-picker screen.
+- Verified: backend 34/34 pytest pass; all iteration-2 frontend flows pass.

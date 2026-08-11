@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 2 backend + frontend verified. Backend pytest: 34/34 PASS (100%). New behavior confirmed: (a) Boss password-only sign-in with 'scharf'/'Scharf'/'SCHARF'/'ScHaRf' all 200; missing password 401; wrong password 401; no name required. (b) Floors CRUD: GET/POST/PUT (rename + blueprint_image base64)/DELETE all work; deleting a floor cascades room deletion; deleting a building cascades floors + rooms. (c) Migration: every seeded building has >=1 floor and every seeded room has floor_id populated. (d) Rooms scope by floor_id + building_id via GET /api/rooms?floor_id=; POST /api/rooms persists floor_id. (e) Teacher visit 3-day rule: today/+1/+2 -> 400 'at least 3 days'; +3 and +10 -> 200; adding a visit flips room status to 'teacher_in'; toggling the same date off with no other visits reverts room to 'untouched'. (f) Numbers still returns per-building rooms/hallways/stairs/entryways/overall + countdown_weekdays. Frontend (mobile viewport 390x844): Boss sign-in modal shows ONLY password field (no name), 'Scharf' works, wrong password shows 'Incorrect password'. Floor plan renders floor chip row (data-testid floor-<id>) with an add-floor plus chip. Boss does NOT see the gear (admin-only). Sign-out (sign-out-btn) correctly redirects to auth/role picker - the reported bug is fixed. Admin sees manage-building-btn; Manage sheet opens and renders every required control (building-name-input, add-building-btn, delete-building-btn, upload-blueprint-btn, floor-name-input-<id>, delete-floor-<id>, manage-add-floor-btn, manage-done-btn). Blueprint image visibly renders behind the pins on Memorial Hall / 1st Floor (an upload from a previous run persisted). Deprecated packages detected: none. React-Native web warnings still present: shadow* -> boxShadow, props.pointerEvents -> style.pointerEvents (unchanged from iteration 1, non-blocking).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Likely in /app/frontend/src/theme.ts (shadow.card / shadow.lg). Migrate for RN Web / RN 0.76+."},
+      {"component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Search codebase for pointerEvents prop and move into style."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional/LOW - carried over) Migrate shadow* -> boxShadow in src/theme.ts.",
+    "(Optional/LOW - carried over) Move pointerEvents prop into style.pointerEvents.",
+    "Note: seeded Memorial Hall currently has only 1 floor (migration created '1st Floor'); the original 2-floor seed no longer applied because DB persisted from iteration 1. Not a bug - admin can add floors via Manage sheet. If the desired demo needs a 2nd floor, main agent could enhance migrate_floors() or reset the DB."
+  ],
+  "critical_code_review_comments": [
+    "server.py: DELETE /api/floors/{id} does not verify floor exists before cascade delete (returns {deleted:true} for non-existent id). Minor - matches building delete style.",
+    "PUT /api/floors/{id} + PUT /api/buildings/{id}: no auth check; anyone with URL can rename/upload blueprint. Matches iteration 1 style (auth intentionally lightweight per main agent).",
+    "add_visit: uses date-string equality for existing lookup; correct since ISO date strings compare lexicographically.",
+    "clean() helper consistently strips MongoDB _id. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (rewritten for iteration 2 - 34 tests)",
+    "/app/test_reports/pytest/pytest_results.xml (regenerated)",
+    "/app/test_reports/iteration_2.json (created)"
+  ],
+  "success_rate": {"backend": "100% (34/34)", "frontend": "100% of critical iteration-2 flows verified"},
+  "seed_data_creation": "None permanent. Ephemeral TEST_-prefixed floors/rooms/buildings/memos created and cleaned up. One blueprint image visible on Memorial Hall/1st Floor persisted from a prior admin test upload - harmless.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend base URL var: EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL). Boss auth is password-only (Scharf, case-insensitive) - do NOT send 'name'. Admin password 'gobigred' case-insensitive. Teacher visit rule = (visit_date - today).days >= 3. Toggling a visit flips room.status between 'teacher_in' and (if last visit removed) 'untouched'. Floors are scoped: rooms carry both building_id and floor_id. Manage sheet is admin-only (gated on user.role === 'admin'). All manage controls have testIDs prefixed with 'manage-' / 'building-' / 'floor-' / 'delete-floor-' / 'upload-blueprint-btn'. sign-out-btn is on the floor plan header and now correctly resets the router to /auth.",
+  "rca_of_issue": "N/A - all requested iteration-2 features working. One test assertion I initially wrote assumed Memorial Hall would have >=2 floors (from seed); it only has 1 because seed() short-circuits when users already exist and the migration only backfills a single '1st Floor'. I relaxed the assertion to >=1 floor per building, matching the actual migration contract."
+}
