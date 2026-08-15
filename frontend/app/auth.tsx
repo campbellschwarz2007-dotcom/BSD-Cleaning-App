@@ -77,7 +77,7 @@ export default function AuthScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const status = await api.pinStatus({ role, name: name.trim() });
-      setHasPin(!!status.has_pin);
+      setHasPin(!!status?.has_pin);
       setPin("");
       setStep("pin");
     } catch (e: any) {
@@ -100,6 +100,10 @@ export default function AuthScreen() {
       }
       if (needsPassword) body.password = password;
       const user = await api.signin(body);
+      if (!user?.id) {
+        setError("Sign in failed — please try again.");
+        return;
+      }
       await signIn(user);
       closeSheet();
       router.replace("/(tabs)/floorplan");

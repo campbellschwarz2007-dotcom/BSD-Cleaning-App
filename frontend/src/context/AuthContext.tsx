@@ -36,6 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = async (u: User) => {
+    if (!u?.id) return;
     setCurrentUser(u);
     setUser(u);
     await storage.setItem(KEY, u as any);
