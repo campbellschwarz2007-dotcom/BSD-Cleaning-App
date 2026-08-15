@@ -78,3 +78,11 @@ Multi-role mobile app for a school cleaning crew. Roles: Cleaner, Teacher, Boss,
 - Teacher-in = per day: booking a room no longer sets a persistent red status. Instead GET /rooms returns teacher_today (true if a visit dated today exists); the floor plan shows red ONLY on the actual visit day, otherwise the normal cleaning color. Un-booking never touches cleaning status.
 - Teacher booking gating: teachers can only book gray/yellow rooms (untouched/in_progress) and at least 3 days ahead; completed (green) rooms are blocked (backend 400 + UI message + locked days).
 - Web zoom: computer/web now shows + / − zoom buttons in the floor canvas (pinch stays for phone). Hint text adapts per platform.
+
+## Iteration 7 (2026-06 fork) — Health check after "login broken" report
+- Investigated report that .env files were wiped and server logic broke. FINDING: nothing was broken.
+  - backend/.env and frontend/.env are intact and correct (MONGO_URL, DB_NAME, EXPO_PUBLIC_* all present).
+  - server.py imports/requirements consistent (fastapi, motor, httpx, bcrypt, pydantic, uvicorn); no missing emergentintegrations import.
+  - Login verified 200 for admin (gobigred) and boss (Scharf); cleaner name+PIN 200; external preview /api/buildings 200.
+  - Frontend login verified end-to-end via screenshot: admin lands on Floor Plan with tabs; all edits preserved.
+  - Root cause of confusion: the earlier requested data wipe cleared all users, so previously-known cleaner/teacher NAMES now prompt to CREATE a PIN on first sign-in (expected). Boss/Admin passwords unchanged. Restarted backend+expo cleanly.
