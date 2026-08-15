@@ -711,7 +711,6 @@ async def list_tasks(assigned_to: Optional[str] = None, room_id: Optional[str] =
     items = await db.tasks.find(q).sort("created_at", -1).to_list(1000)
     return [clean(t) for t in items]
 
-
 @api_router.post("/tasks")
 async def create_task(inp: TaskInput,
                       x_user_id: Optional[str] = Header(None),
@@ -723,7 +722,7 @@ async def create_task(inp: TaskInput,
     if inp.room_id:
         room = await db.rooms.find_one({"id": inp.room_id})
         room_name = room["name"] if room else None
-doc = {"id": new_id(), "title": inp.title, "description": inp.description,
+    doc = {"id": new_id(), "title": inp.title, "description": inp.description,
            "room_id": inp.room_id, "room_name": room_name,
            "assigned_to": inp.assigned_to, "created_by": actor["id"],
            "created_by_name": actor["name"], "status": "pending",
@@ -736,13 +735,11 @@ doc = {"id": new_id(), "title": inp.title, "description": inp.description,
 # ----------------------------- Seed & Migrations -----------------------------
 
 async def seed():
-    # Keep your database seed intact
     seeded = await db.settings.find_one({"id": "_seeded"})
     if seeded and seeded.get("done"):
         return
     
     logger.info("Seeding initial database contents...")
-    # Add any specific users or rooms your app defaults to here
     await db.settings.update_one({"id": "_seeded"}, {"$set": {"done": True}}, upsert=True)
     logger.info("Seed complete.")
 
@@ -793,8 +790,4 @@ app.include_router(api_router)
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
     client.close()
