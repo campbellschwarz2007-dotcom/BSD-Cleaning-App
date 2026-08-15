@@ -4,3 +4,6 @@ pydantic
 python-dotenv
 google-generativeai
 motor
+httpx
+bcrypt
+passlib
