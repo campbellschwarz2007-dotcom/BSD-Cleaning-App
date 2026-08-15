@@ -69,3 +69,12 @@ Multi-role mobile app for a school cleaning crew. Roles: Cleaner, Teacher, Boss,
 - PIN sign-in: Cleaners & Teachers now sign in in two steps — enter name, then PIN. First sign-in for a name CREATES a 4-digit PIN (bcrypt-hashed server-side); subsequent sign-ins require it. New endpoint POST /api/auth/pin-status returns {exists, has_pin} so the UI shows "Create a PIN" vs "Enter your PIN". Legacy/seeded names have no PIN and set one on next sign-in. Signin responses now sanitized via pub() (never leak pin_hash/password). Boss/Admin password login unchanged.
 - Local notifications (replaces push): messages now trigger on-device pop-up alerts while the app is open. Global MessageNotifier polls conversations every 8s and fires expo-notifications local notifications for new messages from others. No Firebase/native build required (foreground alerts). Web = no-op.
 - Teachers: cleaning Checklist and Photos sections are now hidden in the room sheet for the teacher role (they still see status, memos/notes, and the booking calendar).
+
+## Iteration 6 (2026-06 fork)
+- Room rename sync fix: admin room/hallway name editing is now a controlled input + Save button (was uncontrolled onEndEditing that failed to persist on web). Name updates everywhere immediately.
+- Rotate boxes: admin edit sheet has ↺/↻ buttons (15° steps) — rooms.rotation persisted; FloorCanvas applies rotation to the pin and repositions the resize handle to the rotated corner.
+- Label font size: admin A−/A+ buttons (rooms.font_size, 6–24px). Minimum resize box lowered to 20x16 so boxes can be much smaller.
+- Auto status from tasks: room status is now derived from checklist completion (none=gray untouched, some=yellow in_progress, all=green completed). Recomputed server-side on checklist toggle/add/delete. Manual status buttons are ADMIN-ONLY (override); removed for cleaner/teacher/boss. 'teacher_in' removed from manual choices.
+- Teacher-in = per day: booking a room no longer sets a persistent red status. Instead GET /rooms returns teacher_today (true if a visit dated today exists); the floor plan shows red ONLY on the actual visit day, otherwise the normal cleaning color. Un-booking never touches cleaning status.
+- Teacher booking gating: teachers can only book gray/yellow rooms (untouched/in_progress) and at least 3 days ahead; completed (green) rooms are blocked (backend 400 + UI message + locked days).
+- Web zoom: computer/web now shows + / − zoom buttons in the floor canvas (pinch stays for phone). Hint text adapts per platform.

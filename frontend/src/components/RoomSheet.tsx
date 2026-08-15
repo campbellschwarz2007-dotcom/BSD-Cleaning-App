@@ -23,8 +23,6 @@ import { pickImageAsDataUri } from "@/src/utils/pickImage";
 import { colors, radius, spacing, statusColor, statusLabel } from "@/src/theme";
 import { StatusPill } from "@/src/components/ui";
 
-const STATUSES = ["untouched", "teacher_in", "in_progress", "completed"];
-
 export default function RoomSheet({
   room,
   visible,
@@ -47,6 +45,7 @@ export default function RoomSheet({
   const [cleaners, setCleaners] = useState<any[]>([]);
   const [memoText, setMemoText] = useState("");
   const [newItem, setNewItem] = useState("");
+  const [nameDraft, setNameDraft] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
   const [assignees, setAssignees] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -77,6 +76,7 @@ export default function RoomSheet({
     if (visible && room) {
       setMemoText("");
       setNewItem("");
+      setNameDraft(room.name || "");
       setTaskTitle("");
       setAssignees([]);
       setNote("");
@@ -193,6 +193,31 @@ export default function RoomSheet({
     onClose();
   };
 
+  const saveName = async () => {
+    if (!nameDraft.trim()) return;
+    setBusy(true);
+    try {
+      await api.updateRoom(room.id, { name: nameDraft.trim() });
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rotateBy = async (deg: number) => {
+    Haptics.selectionAsync();
+    const next = (((room.rotation || 0) + deg) % 360 + 360) % 360;
+    await api.updateRoom(room.id, { rotation: next });
+    await onChanged();
+  };
+
+  const changeFont = async (delta: number) => {
+    Haptics.selectionAsync();
+    const next = Math.min(24, Math.max(6, (room.font_size || 12) + delta));
+    await api.updateRoom(room.id, { font_size: next });
+    await onChanged();
+  };
+
   const canAddPhoto = role === "cleaner" || role === "boss" || role === "admin";
   const myVisits = visits.filter((v) => v.teacher_id === user.id).map((v) => v.date);
   const allVisitDates = new Set(visits.map((v) => v.date));
@@ -235,14 +260,21 @@ export default function RoomSheet({
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Edit element</Text>
                   <Text style={styles.label}>Name</Text>
-                  <TextInput
-                    testID="edit-room-name"
-                    style={styles.input}
-                    defaultValue={room.name}
-                    onEndEditing={(e) =>
-                      api.updateRoom(room.id, { name: e.nativeEvent.text }).then(onChanged)
-                    }
-                  />
+                  <View style={styles.inlineInputRow}>
+                    <TextInput
+                      testID="edit-room-name"
+                      style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                      value={nameDraft}
+                      onChangeText={setNameDraft}
+                      placeholder="Element name"
+                      placeholderTextColor={colors.muted}
+                      onSubmitEditing={saveName}
+                    />
+                    <Pressable testID="save-room-name" onPress={saveName} style={styles.saveNameBtn}>
+                      <Text style={styles.saveNameText}>Save</Text>
+                    </Pressable>
+                  </View>
+
                   <Text style={styles.label}>Type</Text>
                   <View style={styles.chipRow}>
                     {["room", "hallway", "stairs", "entryway"].map((t) => (
@@ -258,6 +290,33 @@ export default function RoomSheet({
                       </Pressable>
                     ))}
                   </View>
+
+                  <Text style={styles.label}>Rotate</Text>
+                  <View style={styles.controlRow}>
+                    <Pressable testID="rotate-left" onPress={() => rotateBy(-15)} style={styles.controlBtn}>
+                      <Ionicons name="arrow-undo" size={18} color={colors.onSurface} />
+                      <Text style={styles.controlBtnText}>15°</Text>
+                    </Pressable>
+                    <Text style={styles.controlValue}>{room.rotation || 0}°</Text>
+                    <Pressable testID="rotate-right" onPress={() => rotateBy(15)} style={styles.controlBtn}>
+                      <Ionicons name="arrow-redo" size={18} color={colors.onSurface} />
+                      <Text style={styles.controlBtnText}>15°</Text>
+                    </Pressable>
+                  </View>
+
+                  <Text style={styles.label}>Label size</Text>
+                  <View style={styles.controlRow}>
+                    <Pressable testID="font-minus" onPress={() => changeFont(-1)} style={styles.controlBtn}>
+                      <Text style={styles.fontMinus}>A</Text>
+                      <Ionicons name="remove" size={16} color={colors.onSurface} />
+                    </Pressable>
+                    <Text style={styles.controlValue}>{room.font_size || 12}px</Text>
+                    <Pressable testID="font-plus" onPress={() => changeFont(1)} style={styles.controlBtn}>
+                      <Text style={styles.fontPlus}>A</Text>
+                      <Ionicons name="add" size={16} color={colors.onSurface} />
+                    </Pressable>
+                  </View>
+
                   <View style={styles.dragHint}>
                     <Ionicons name="move" size={16} color={colors.brandPrimary} />
                     <Text style={styles.dragHintText}>
@@ -271,16 +330,26 @@ export default function RoomSheet({
                 </View>
               ) : null}
 
-              {/* STATUS CONTROLS */}
-              {!editMode && (
+              {/* TEACHER-IN-TODAY BANNER */}
+              {!editMode && room.teacher_today && (
+                <View style={styles.section}>
+                  <View style={styles.todayBanner}>
+                    <Ionicons name="alert-circle" size={18} color="#fff" />
+                    <Text style={styles.todayBannerText}>A teacher is in this room today</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* STATUS CONTROLS (admin only) */}
+              {!editMode && role === "admin" && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Status</Text>
+                  <Text style={styles.hint}>
+                    Rooms turn red automatically on days a teacher is in, and green
+                    automatically when the checklist is complete. Use these to override.
+                  </Text>
                   <View style={styles.chipRow}>
-                    {STATUSES.filter((s) => {
-                      if (role === "cleaner") return s !== "teacher_in";
-                      if (role === "teacher") return s === "teacher_in" || s === "untouched";
-                      return true;
-                    }).map((s) => (
+                    {["untouched", "in_progress", "completed"].map((s) => (
                       <Pressable
                         key={s}
                         testID={`set-status-${s}`}
@@ -429,6 +498,15 @@ export default function RoomSheet({
                     {role === "teacher" ? "Book this room (Teacher In)" : "Teacher coming in"}
                   </Text>
 
+                  {role === "teacher" && room.status === "completed" ? (
+                    <View style={styles.bookBlocked}>
+                      <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                      <Text style={styles.bookBlockedText}>
+                        This room is fully cleaned (green) — no need to book it.
+                      </Text>
+                    </View>
+                  ) : null}
+
                   <View style={styles.weekHeader}>
                     {weekdayLabels.map((w, i) => (
                       <Text key={i} style={styles.weekdayLabel}>
@@ -440,11 +518,13 @@ export default function RoomSheet({
                     {calendarCells.map((d) => {
                       const ds = d.format("YYYY-MM-DD");
                       const diff = d.startOf("day").diff(todayD, "day");
-                      const bookableByMe = role === "teacher" && diff >= 3;
+                      const canBookRoom =
+                        room.status === "untouched" || room.status === "in_progress";
+                      const bookableByMe = role === "teacher" && diff >= 3 && canBookRoom;
                       const mine = myVisits.includes(ds);
                       const booked = allVisitDates.has(ds);
                       const isToday = diff === 0;
-                      const locked = role === "teacher" && diff < 3;
+                      const locked = role === "teacher" && (diff < 3 || !canBookRoom);
                       return (
                         <Pressable
                           key={ds}
@@ -475,7 +555,8 @@ export default function RoomSheet({
 
                   {role === "teacher" ? (
                     <Text style={styles.hint}>
-                      You can only book a room at least 3 days in advance. Booking turns the room red.
+                      You can only book gray or yellow rooms, at least 3 days ahead. The room
+                      shows red on the floor plan only on the days a teacher is in.
                     </Text>
                   ) : visits.length ? (
                     <View style={{ marginTop: spacing.sm }}>
@@ -779,4 +860,50 @@ const styles = StyleSheet.create({
   checkRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: 7 },
   checkText: { flex: 1, fontSize: 15, color: colors.onSurface },
   checkDone: { textDecorationLine: "line-through", color: colors.muted },
+  saveNameBtn: {
+    backgroundColor: colors.brandPrimary,
+    borderRadius: radius.md,
+    paddingHorizontal: 18,
+    justifyContent: "center",
+  },
+  saveNameText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  controlRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  controlBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  controlBtnText: { fontSize: 14, fontWeight: "700", color: colors.onSurface },
+  controlValue: { fontSize: 15, fontWeight: "800", color: colors.onSurface, minWidth: 52, textAlign: "center" },
+  fontMinus: { fontSize: 13, fontWeight: "800", color: colors.onSurface },
+  fontPlus: { fontSize: 18, fontWeight: "800", color: colors.onSurface },
+  todayBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.status_teacher_in,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  todayBannerText: { color: "#fff", fontWeight: "700", fontSize: 14, flex: 1 },
+  bookBlocked: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  bookBlockedText: { color: colors.onSurfaceSecondary, fontSize: 13, flex: 1 },
 });

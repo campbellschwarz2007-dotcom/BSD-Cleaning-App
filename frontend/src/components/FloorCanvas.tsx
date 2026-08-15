@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Text, StyleSheet } from "react-native";
+import { Text, StyleSheet, View, Pressable, Platform } from "react-native";
 import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -81,8 +82,8 @@ function DraggablePin({
       sh.value = h.value;
     })
     .onUpdate((e) => {
-      w.value = Math.max(56, sw.value + e.translationX / scale.value);
-      h.value = Math.max(34, sh.value + e.translationY / scale.value);
+      w.value = Math.max(20, sw.value + e.translationX / scale.value);
+      h.value = Math.max(16, sh.value + e.translationY / scale.value);
     })
     .onEnd(() => {
       runOnJS(saveJS)();
@@ -90,18 +91,41 @@ function DraggablePin({
 
   const pinGesture = editMode ? Gesture.Exclusive(drag, tap) : tap;
 
+  const rot = room.rotation || 0;
+  const rad = (rot * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+
+  const isRed = !!room.teacher_today;
+  const bg = isRed ? colors.status_teacher_in : statusColor(room.status);
+  const fg = isRed ? "#FFFFFF" : statusTextColor(room.status);
+  const fontSize = room.font_size || 12;
+
   const pinStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: x.value }, { translateY: y.value }],
+    transform: [
+      { translateX: x.value },
+      { translateY: y.value },
+      { rotate: `${rot}deg` },
+    ],
     width: w.value,
     height: h.value,
   }));
 
-  const handleStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: x.value + w.value - 13 },
-      { translateY: y.value + h.value - 13 },
-    ],
-  }));
+  const handleStyle = useAnimatedStyle(() => {
+    // position at the pin's (possibly rotated) bottom-right corner
+    const cx = x.value + w.value / 2;
+    const cy = y.value + h.value / 2;
+    const dx = w.value / 2;
+    const dy = h.value / 2;
+    const rx = dx * cos - dy * sin;
+    const ry = dx * sin + dy * cos;
+    return {
+      transform: [
+        { translateX: cx + rx - 13 },
+        { translateY: cy + ry - 13 },
+      ],
+    };
+  });
 
   return (
     <>
@@ -111,13 +135,13 @@ function DraggablePin({
           style={[
             styles.pin,
             pinStyle,
-            { backgroundColor: statusColor(room.status) },
+            { backgroundColor: bg },
             editMode && styles.pinEditing,
           ]}
         >
           <Text
             numberOfLines={2}
-            style={[styles.pinText, { color: statusTextColor(room.status) }]}
+            style={[styles.pinText, { color: fg, fontSize }]}
           >
             {room.name}
           </Text>
@@ -217,6 +241,26 @@ export default function FloorCanvas({
 
   const composed = Gesture.Simultaneous(pinch, pan);
 
+  const zoomBy = (factor: number) => {
+    const s = Math.min(4, Math.max(1, savedScale.value * factor));
+    scale.value = s;
+    savedScale.value = s;
+    const scaledW = baseW * s;
+    const scaledH = baseH * s;
+    const nx =
+      scaledW <= size.w
+        ? (size.w - scaledW) / 2
+        : Math.min(0, Math.max(size.w - scaledW, ox.value));
+    const ny =
+      scaledH <= size.h
+        ? (size.h - scaledH) / 2
+        : Math.min(0, Math.max(size.h - scaledH, oy.value));
+    ox.value = nx;
+    oy.value = ny;
+    savedOx.value = nx;
+    savedOy.value = ny;
+  };
+
   const contentStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: ox.value + (baseW / 2) * (scale.value - 1) },
@@ -260,6 +304,25 @@ export default function FloorCanvas({
             ))}
           </Animated.View>
         )}
+
+        {Platform.OS === "web" && size.w > 0 && (
+          <View style={styles.zoomControls} pointerEvents="box-none">
+            <Pressable
+              testID="zoom-in-btn"
+              onPress={() => zoomBy(1.25)}
+              style={styles.zoomBtn}
+            >
+              <Ionicons name="add" size={22} color={colors.onSurface} />
+            </Pressable>
+            <Pressable
+              testID="zoom-out-btn"
+              onPress={() => zoomBy(0.8)}
+              style={styles.zoomBtn}
+            >
+              <Ionicons name="remove" size={22} color={colors.onSurface} />
+            </Pressable>
+          </View>
+        )}
       </Animated.View>
     </GestureDetector>
   );
@@ -293,6 +356,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderWidth: 2,
     borderColor: colors.brandPrimary,
+    ...shadow.card,
+  },
+  zoomControls: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    gap: 8,
+  },
+  zoomBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
     ...shadow.card,
   },
 });

@@ -86,6 +86,22 @@ def make_checklist(room_type):
     return [{"id": new_id(), "text": t, "done": False} for t in items]
 
 
+def status_from_checklist(checklist):
+    """Derive a room's cleaning status from how much of its checklist is done."""
+    items = checklist or []
+    total = len(items)
+    done = len([i for i in items if i.get("done")])
+    if total == 0 or done == 0:
+        return "untouched"
+    if done >= total:
+        return "completed"
+    return "in_progress"
+
+
+def today_iso():
+    return datetime.now(timezone.utc).date().isoformat()
+
+
 async def get_actor(x_user_id: Optional[str], x_user_role: Optional[str]):
     if not x_user_id:
         return None
@@ -181,6 +197,8 @@ class RoomInput(BaseModel):
     y: float = 50
     width: float = 90
     height: float = 44
+    rotation: float = 0
+    font_size: int = 12
     status: str = "untouched"
 
 
@@ -191,6 +209,8 @@ class RoomUpdate(BaseModel):
     y: Optional[float] = None
     width: Optional[float] = None
     height: Optional[float] = None
+    rotation: Optional[float] = None
+    font_size: Optional[int] = None
     status: Optional[str] = None
 
 
@@ -451,7 +471,17 @@ async def list_rooms(building_id: Optional[str] = None, floor_id: Optional[str] 
     if floor_id:
         q["floor_id"] = floor_id
     items = await db.rooms.find(q).to_list(1000)
-    return [clean(r) for r in items]
+    room_ids = [r["id"] for r in items]
+    today = today_iso()
+    visits_today = await db.visits.find(
+        {"room_id": {"$in": room_ids}, "date": today}).to_list(2000)
+    today_set = {v["room_id"] for v in visits_today}
+    out = []
+    for r in items:
+        r = clean(r)
+        r["teacher_today"] = r["id"] in today_set
+        out.append(r)
+    return out
 
 
 @api_router.get("/rooms/{room_id}")
@@ -459,7 +489,10 @@ async def get_room(room_id: str):
     r = await db.rooms.find_one({"id": room_id})
     if not r:
         raise HTTPException(404, "Room not found")
-    return clean(r)
+    r = clean(r)
+    r["teacher_today"] = bool(
+        await db.visits.find_one({"room_id": room_id, "date": today_iso()}))
+    return r
 
 
 @api_router.post("/rooms")
@@ -559,7 +592,9 @@ async def toggle_checklist(room_id: str, inp: ChecklistToggle):
     for item in checklist:
         if item["id"] == inp.item_id:
             item["done"] = not item.get("done", False)
-    await db.rooms.update_one({"id": room_id}, {"$set": {"checklist": checklist}})
+    await db.rooms.update_one(
+        {"id": room_id},
+        {"$set": {"checklist": checklist, "status": status_from_checklist(checklist)}})
     r = await db.rooms.find_one({"id": room_id})
     return clean(r)
 
@@ -571,6 +606,9 @@ async def add_checklist_item(room_id: str, inp: ChecklistAdd):
     r = await db.rooms.find_one({"id": room_id})
     if not r:
         raise HTTPException(404, "Room not found")
+    await db.rooms.update_one(
+        {"id": room_id}, {"$set": {"status": status_from_checklist(r.get("checklist", []))}})
+    r = await db.rooms.find_one({"id": room_id})
     return clean(r)
 
 
@@ -580,6 +618,9 @@ async def delete_checklist_item(room_id: str, item_id: str):
     r = await db.rooms.find_one({"id": room_id})
     if not r:
         raise HTTPException(404, "Room not found")
+    await db.rooms.update_one(
+        {"id": room_id}, {"$set": {"status": status_from_checklist(r.get("checklist", []))}})
+    r = await db.rooms.find_one({"id": room_id})
     return clean(r)
 
 @api_router.get("/visits")
@@ -611,20 +652,21 @@ async def add_visit(room_id: str, inp: VisitInput,
     existing = await db.visits.find_one(
         {"room_id": room_id, "teacher_id": actor["id"], "date": inp.date})
     if existing:
+        # Removing a booking never touches the room's cleaning status.
         await db.visits.delete_one({"id": existing["id"]})
-        remaining = await db.visits.find_one({"room_id": room_id})
-        if not remaining:
-            room = await db.rooms.find_one({"id": room_id})
-            if room and room.get("status") == "teacher_in":
-                await db.rooms.update_one({"id": room_id}, {"$set": {"status": "untouched"}})
         return {"toggled": "removed"}
     room = await db.rooms.find_one({"id": room_id})
+    if not room:
+        raise HTTPException(404, "Room not found")
+    # Teachers may only book rooms that are gray (untouched) or yellow (in progress).
+    if room.get("status") == "completed":
+        raise HTTPException(400, "This room is already fully cleaned — no need to book it")
     doc = {"id": new_id(), "room_id": room_id, "teacher_id": actor["id"],
-           "teacher_name": actor["name"], "room_name": room["name"] if room else None,
+           "teacher_name": actor["name"], "room_name": room["name"],
            "date": inp.date, "created_at": now_iso()}
     await db.visits.insert_one(dict(doc))
-    # marking a room turns it red ("teacher in")
-    await db.rooms.update_one({"id": room_id}, {"$set": {"status": "teacher_in"}})
+    # NOTE: the room shows red on the floor plan only on the actual visit date
+    # (computed via teacher_today); we no longer flip a persistent status.
     return {"toggled": "added", **clean(doc)}
 
 

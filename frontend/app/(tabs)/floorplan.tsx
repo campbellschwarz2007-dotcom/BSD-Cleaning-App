@@ -8,6 +8,7 @@ import {
   Modal,
   TextInput,
   Linking,
+  Platform,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -314,7 +315,11 @@ export default function FloorPlanScreen() {
           <View style={styles.zoomHint} pointerEvents="none">
             <Ionicons name={editMode && isAdmin ? "move" : "scan"} size={14} color="#fff" />
             <Text style={styles.zoomHintText}>
-              {editMode && isAdmin ? "Drag to move · pull corner to resize" : "Pinch to zoom"}
+              {editMode && isAdmin
+                ? "Drag to move · pull corner to resize"
+                : Platform.OS === "web"
+                ? "Use + / − to zoom"
+                : "Pinch to zoom"}
             </Text>
           </View>
         </View>
