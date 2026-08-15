@@ -1,6 +1,6 @@
 import { storage } from "@/src/utils/storage";
 
-const BASE = 'https://onrender.com';
+const BASE = 'https://bsd-cleaning-app-c6q0.onrender.com';
 
 export type User = {
   id: string;
