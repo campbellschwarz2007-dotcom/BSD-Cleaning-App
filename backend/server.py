@@ -723,7 +723,6 @@ async def create_task(inp: TaskInput,
     if inp.room_id:
         room = await db.rooms.find_one({"id": inp.room_id})
         room_name = room["name"] if room else None
-    doc = {"id": new_id(), "title": inp.title, "description": inp.description,
 doc = {"id": new_id(), "title": inp.title, "description": inp.description,
            "room_id": inp.room_id, "room_name": room_name,
            "assigned_to": inp.assigned_to, "created_by": actor["id"],
