@@ -1,6 +1,6 @@
 import { storage } from "@/src/utils/storage";
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
+const BASE = 'https://onrender.com';
 
 export type User = {
   id: string;
